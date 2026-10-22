@@ -222,8 +222,10 @@ __marimo__/
 # Kokabiel: site-specific and generated files (the repo is public)
 site.env
 ansible/inventory/
-ansible/logs/
-ansible/captures/
+ansible/logs/*
+!ansible/logs/.gitkeep
+ansible/captures/*
+!ansible/captures/.gitkeep
 tests/private-denylist.txt
 
 # Local agent/worktree scratch

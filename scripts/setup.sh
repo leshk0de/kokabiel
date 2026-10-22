@@ -63,6 +63,7 @@ install_file() {
 		chmod "$3" "$2"
 		return 0
 	fi
+	KK_CHANGED=1
 	mkdir -p "$(dirname "$2")"
 	cp "$1" "$2" || kk_die "cannot install $2"
 	chmod "$3" "$2"
@@ -149,6 +150,14 @@ write_kokabiel_config() {
 	uci set kokabiel.main.track_level="$TRACK_LEVEL"
 }
 
+# uci_set_list PKG.SEC.OPT VALUE: make the list exactly VALUE; untouched when
+# already so (delete + add_list would register a change on every run).
+uci_set_list() {
+	[ "$(uci -q get "$1" 2>/dev/null)" = "$2" ] && return 0
+	uci -q delete "$1" || true
+	uci add_list "$1=$2"
+}
+
 # uci_sections PKG TYPE: print "pkg.section" for every section of TYPE.
 uci_sections() {
 	uci show "$1" 2>/dev/null | sed -n "s/^\\($1\\.[^.=]*\\)=$2\$/\\1/p"
@@ -190,10 +199,8 @@ configure_dnsmasq() {
 	_dm='dhcp.@dnsmasq[0]'
 	uci -q get "$_dm" >/dev/null 2>&1 || return 0
 	uci set "$_dm.localuse=1"
-	uci -q delete "$_dm.interface" || true
-	uci add_list "$_dm.interface=lo"
-	uci -q delete "$_dm.notinterface" || true
-	uci add_list "$_dm.notinterface=wan"
+	uci_set_list "$_dm.interface" lo
+	uci_set_list "$_dm.notinterface" wan
 }
 
 configure_dhcp() {
@@ -209,8 +216,7 @@ configure_firewall() {
 	uci set firewall.kokabiel_capture.input=DROP
 	uci set firewall.kokabiel_capture.output=DROP
 	uci set firewall.kokabiel_capture.forward=DROP
-	uci -q delete firewall.kokabiel_capture.network || true
-	uci add_list firewall.kokabiel_capture.network=capture
+	uci_set_list firewall.kokabiel_capture.network capture
 
 	for _z in $(uci_sections firewall zone); do
 		[ "$_z" = firewall.kokabiel_capture ] && continue
@@ -299,8 +305,7 @@ configure_services() {
 		kk_svc "$_s" disable
 	done
 	if [ "$ENABLE_LUCI" = 1 ]; then
-		uci -q delete uhttpd.main.listen_http || true
-		uci add_list uhttpd.main.listen_http=127.0.0.1:80
+		uci_set_list uhttpd.main.listen_http 127.0.0.1:80
 		uci -q delete uhttpd.main.listen_https || true
 		kk_svc uhttpd enable
 	else
@@ -310,6 +315,9 @@ configure_services() {
 }
 
 apply() {
+	[ -z "$(uci changes 2>/dev/null)" ] || KK_CHANGED=1
+	# Marker for orchestration (Ansible keys changed_when on this line).
+	[ "$KK_CHANGED" = 1 ] && echo KOKABIEL_CHANGED
 	uci commit
 	kk_svc network reload
 	kk_svc firewall restart
@@ -329,6 +337,7 @@ apply() {
 main() {
 	ENV_FILE=
 	SKIP_PACKAGES=0
+	KK_CHANGED=0
 	while [ $# -gt 0 ]; do
 		case $1 in
 		--env)

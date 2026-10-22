@@ -1,0 +1,92 @@
+---
+- name: Check collector_host is set
+  ansible.builtin.assert:
+    that:
+      - collector_host is defined
+      - collector_host | string | length > 0
+      - "'<' not in collector_host | string"
+    fail_msg: Set collector_host for {{ inventory_hostname }} in host_vars (a placeholder like <...> is rejected).
+    quiet: true
+
+- name: Check config values are safe to write into site.env
+  ansible.builtin.assert:
+    that:
+      - item | string is match('^[^\x27\x22\\\\\n\r]*$')
+    fail_msg: A site.env value contains a quote, backslash or newline.
+    quiet: true
+  loop:
+    - "{{ collector_host }}"
+    - "{{ collector_port }}"
+    - "{{ export_version }}"
+    - "{{ capture_if }}"
+    - "{{ mgmt_if }}"
+    - "{{ probe_name }}"
+    - "{{ capture_dir }}"
+    - "{{ capture_sd_max_mb }}"
+    - "{{ capture_ram_max_mb }}"
+    - "{{ enable_luci }}"
+    - "{{ track_level }}"
+    - "{{ syslog_host }}"
+    - "{{ metrics_allowed_src }}"
+
+- name: Check the libpcap immediate-mode shim was built on the controller
+  ansible.builtin.stat:
+    path: "{{ probe_shim_src }}"
+  delegate_to: localhost
+  become: false
+  register: probe_shim_stat
+
+- name: Fail early if the shim is missing
+  ansible.builtin.fail:
+    msg: >-
+      build/pcap_immediate.so not found. Run 'make shim' in the repository root
+      first; without the shim softflowd processes no flows.
+  when: not probe_shim_stat.stat.exists
+
+- name: Create /etc/kokabiel
+  ansible.builtin.file:
+    path: /etc/kokabiel
+    state: directory
+    mode: "0755"
+
+- name: Write site.env
+  ansible.builtin.template:
+    src: site.env.j2
+    dest: /etc/kokabiel/site.env
+    mode: "0600"
+    owner: root
+    group: root
+
+- name: Copy scripts to the probe
+  ansible.builtin.copy:
+    src: "{{ probe_scripts_src }}"
+    dest: /usr/share/kokabiel/src/
+    mode: preserve
+    owner: root
+    group: root
+
+- name: Create the shim directory
+  ansible.builtin.file:
+    path: /usr/share/kokabiel/src/files
+    state: directory
+    mode: "0755"
+
+- name: Copy the immediate-mode shim where setup.sh looks for it
+  ansible.builtin.copy:
+    src: "{{ probe_shim_src }}"
+    dest: /usr/share/kokabiel/src/files/pcap_immediate.so
+    mode: "0644"
+    owner: root
+    group: root
+
+- name: Run setup.sh
+  ansible.builtin.command: sh /usr/share/kokabiel/src/setup.sh --env /etc/kokabiel/site.env
+  register: probe_setup
+  changed_when: "'KOKABIEL_CHANGED' in probe_setup.stdout_lines"
+
+- name: Check probe health
+  ansible.builtin.command: /usr/sbin/kokabiel-status
+  register: probe_status
+  changed_when: false
+  failed_when: probe_status.rc != 0
+  tags: [status]

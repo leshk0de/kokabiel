@@ -1,0 +1,4 @@
+---
+# Stub: filled in by a later task.
+- name: Placeholder
+  ansible.builtin.meta: noop

@@ -326,3 +326,12 @@ def test_setup_dnsmasq_loopback_only_converges(probe):
     first = probe.run("uci show dhcp.@dnsmasq[0]").out
     assert run_setup(probe).rc == 0
     assert probe.run("uci show dhcp.@dnsmasq[0]").out == first
+
+
+def test_setup_prints_changed_marker_only_when_changed(probe):
+    first = run_setup(probe)
+    assert first.rc == 0, first.err
+    assert "KOKABIEL_CHANGED" in first.out.splitlines()
+    second = run_setup(probe)
+    assert second.rc == 0, second.err
+    assert "KOKABIEL_CHANGED" not in second.out.splitlines()

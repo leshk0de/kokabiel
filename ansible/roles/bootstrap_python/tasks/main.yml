@@ -1,0 +1,16 @@
+---
+# OpenWrt ships no Python, so this role uses only `raw`.
+- name: Install python3-light if /usr/bin/python3 is missing
+  ansible.builtin.raw: |
+    if [ -x /usr/bin/python3 ]; then
+      echo PYTHON_PRESENT
+    elif command -v apk >/dev/null 2>&1; then
+      apk update >/dev/null && apk add python3-light >/dev/null && echo PYTHON_INSTALLED
+    elif command -v opkg >/dev/null 2>&1; then
+      opkg update >/dev/null && opkg install python3-light >/dev/null && echo PYTHON_INSTALLED
+    else
+      echo "no supported package manager (apk or opkg)" >&2
+      exit 1
+    fi
+  register: bootstrap_python_result
+  changed_when: "'PYTHON_INSTALLED' in bootstrap_python_result.stdout"

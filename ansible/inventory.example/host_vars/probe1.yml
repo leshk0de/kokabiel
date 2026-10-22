@@ -1,0 +1,17 @@
+---
+# Per-probe settings. Only collector_host is required.
+probe_name: probe1
+collector_host: 198.51.100.20
+collector_port: 2055
+export_version: 10
+capture_if: eth1
+mgmt_if: eth0
+capture_dir: /mnt/kokabiel-cap
+capture_sd_max_mb: 4096
+capture_ram_max_mb: 100
+enable_luci: 0
+# syslog_host: 198.51.100.30
+# metrics_allowed_src: 198.51.100.0/24
+track_level: full
+# ssh_pubkey: ~/.ssh/id_ed25519.pub
+disable_password_login: false

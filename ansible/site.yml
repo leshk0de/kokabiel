@@ -1,0 +1,31 @@
+---
+- name: Bootstrap Python on the probe
+  hosts: kokabiel
+  gather_facts: false
+  roles:
+    - bootstrap_python
+
+- name: Configure the probe
+  hosts: kokabiel
+  gather_facts: false
+  roles:
+    - probe
+    - hardening
+    - sd
+
+- name: Monitoring hand-off
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Print a Prometheus scrape config for the probes
+      ansible.builtin.debug:
+        msg: |-
+          # Paste under scrape_configs: in prometheus.yml
+          - job_name: kokabiel
+            static_configs:
+          {% for h in groups['kokabiel'] %}
+              - targets: ['{{ hostvars[h].ansible_host | default(h) }}:9100']
+                labels:
+                  probe: {{ hostvars[h].probe_name | default(h) }}
+          {% endfor %}

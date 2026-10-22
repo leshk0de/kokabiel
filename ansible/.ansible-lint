@@ -1,0 +1,9 @@
+exclude_paths:
+  - inventory/
+  - logs/
+  - captures/
+# The inventory variable names (collector_host, capture_if, ...) are a fixed
+# operator-facing interface shared by the probe, hardening and sd roles, so
+# they cannot carry a per-role prefix.
+skip_list:
+  - var-naming[no-role-prefix]

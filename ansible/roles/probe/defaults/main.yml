@@ -1,0 +1,17 @@
+---
+# collector_host is required (set it per probe). Everything else is optional;
+# unset values fall back to setup.sh's own defaults.
+probe_name: "{{ inventory_hostname }}"
+collector_port: 2055
+export_version: 10
+capture_if: eth1
+mgmt_if: eth0
+capture_dir: /mnt/kokabiel-cap
+capture_sd_max_mb: 4096
+capture_ram_max_mb: 100
+enable_luci: 0
+syslog_host: ""
+metrics_allowed_src: ""
+track_level: full
+probe_shim_src: "{{ playbook_dir }}/../build/pcap_immediate.so"
+probe_scripts_src: "{{ playbook_dir }}/../scripts/"
