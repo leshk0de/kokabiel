@@ -1,4 +1,56 @@
 ---
-# Stub: filled in by a later task.
-- name: Placeholder
-  ansible.builtin.meta: noop
+- name: Describe the SD slot
+  ansible.builtin.command: /usr/sbin/kokabiel-sd describe
+  register: sd_describe_raw
+  changed_when: false
+
+- name: Parse the SD description
+  ansible.builtin.set_fact:
+    sd_info: "{{ sd_describe_raw.stdout | trim | from_json }}"
+
+- name: Handle a new (non-Kokabiel) SD card
+  when: sd_info.present | bool and not (sd_info.kokabiel | bool)
+  block:
+    - name: Work out the sanitized log file name
+      ansible.builtin.set_fact:
+        sd_log_file: >-
+          {{ playbook_dir }}/logs/{{ inventory_hostname }}-sd-{{
+          (sd_info.serial | default('unknown') | string
+          | regex_replace('[^A-Za-z0-9_-]', '_')) }}.json
+
+    - name: Log the card description locally before asking
+      ansible.builtin.copy:
+        content: "{{ sd_info | to_nice_json }}\n"
+        dest: "{{ sd_log_file }}"
+        mode: "0644"
+      delegate_to: localhost
+      vars:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+    - name: Ask before erasing the card
+      ansible.builtin.pause:
+        prompt: "Erase SD card {{ sd_info.size_mb }}MB {{ sd_info.serial }} on {{ inventory_hostname }} and use it for captures? Type ERASE to confirm:"
+      register: sd_answer
+      when: erase_new_sd_card is not defined
+
+    - name: Decide whether to erase
+      ansible.builtin.set_fact:
+        sd_do_erase: >-
+          {{ (erase_new_sd_card | default(false) | bool)
+          or ((sd_answer.user_input | default('')) == 'ERASE') }}
+
+    - name: Format the SD card
+      ansible.builtin.command: >-
+        /usr/sbin/kokabiel-format-sd --device {{ sd_info.device | quote }}
+        --confirm ERASE --probe {{ inventory_hostname | quote }}
+      changed_when: true
+      when: sd_do_erase | bool
+
+    - name: Leave the card untouched
+      ansible.builtin.debug:
+        msg: SD card left untouched; captures will use RAM
+      when: not (sd_do_erase | bool)
+
+- name: Mount the capture SD card if present
+  ansible.builtin.command: /usr/sbin/kokabiel-sd mount
+  changed_when: false

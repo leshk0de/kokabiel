@@ -1,0 +1,60 @@
+---
+# Usage: ansible-playbook capture.yml -e target=192.0.2.50 [-e seconds=60]
+- name: Capture traffic for a target and fetch the pcaps
+  hosts: all
+  gather_facts: false
+  vars:
+    capture_seconds: "{{ seconds | default(60) | int }}"
+  tasks:
+    - name: Require a target
+      ansible.builtin.assert:
+        that:
+          - target is defined
+          - target | string | length > 0
+        fail_msg: Pass the capture target with -e target=<ip-or-host>
+        quiet: true
+
+    - name: Run the capture
+      ansible.builtin.command: >-
+        /usr/sbin/kokabiel-capture {{ target | string | quote }}
+        {{ capture_seconds }}
+      register: capture_run
+      async: "{{ (capture_seconds | int) + 60 }}"
+      poll: 5
+      changed_when: true
+      failed_when: false
+
+    - name: Fail if another capture is running
+      ansible.builtin.fail:
+        msg: another capture is running
+      when: capture_run.rc == 75
+
+    - name: Fail if the capture failed
+      ansible.builtin.fail:
+        msg: "kokabiel-capture failed (rc={{ capture_run.rc }}): {{ capture_run.stderr | default('') | trim }}"
+      when: capture_run.rc != 0
+
+    - name: Parse the capture summary
+      ansible.builtin.set_fact:
+        capture_info: "{{ (capture_run.stdout_lines | last) | from_json }}"
+
+    - name: Fetch the capture files
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: "{{ playbook_dir }}/captures/{{ inventory_hostname }}/"
+        flat: true
+      loop: "{{ capture_info.files }}"
+
+    - name: Delete RAM-backed capture files from the probe
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ capture_info.files }}"
+      when: capture_info.storage == "ram"
+
+    - name: Show what was captured
+      ansible.builtin.debug:
+        msg:
+          - "Files: {{ capture_info.files | map('basename') | map('regex_replace', '^', playbook_dir ~ '/captures/' ~ inventory_hostname ~ '/') | list }}"
+          - "Packets: {{ capture_info.packets }}"
+          - "Bytes: {{ capture_info.bytes }}"
