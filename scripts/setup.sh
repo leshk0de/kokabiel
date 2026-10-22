@@ -69,6 +69,19 @@ install_file() {
 	chmod "$3" "$2"
 }
 
+# install_shim: the libpcap immediate-mode LD_PRELOAD shim (built by 'make shim').
+install_shim() {
+	_so=
+	for _c in "$SCRIPT_DIR/../build/pcap_immediate.so" "$SCRIPT_DIR/files/pcap_immediate.so"; do
+		[ -f "$_c" ] && _so=$_c && break
+	done
+	if [ -n "$_so" ]; then
+		install_file "$_so" "$ROOT/usr/lib/kokabiel/pcap_immediate.so" 0644
+	else
+		kk_log "WARNING: softflowd will not process packets without the immediate-mode shim; run 'make shim'"
+	fi
+}
+
 install_files() {
 	for _f in "$KK_LIB"/*.sh; do
 		install_file "$_f" "$LIBEXEC/$(basename "$_f")" 0644
@@ -79,10 +92,11 @@ install_files() {
 	install_file "$SCRIPT_DIR/files/capture-prep" "$LIBEXEC/capture-prep" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel" "$ROOT/etc/init.d/kokabiel" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel-flows" "$ROOT/etc/init.d/kokabiel-flows" 0755
+	install_shim
 	install_file "$SCRIPT_DIR/files/hotplug/30-kokabiel" "$ROOT/etc/hotplug.d/iface/30-kokabiel" 0644
 	# Keep the installed files across sysupgrade.
 	mkdir -p "$ROOT/etc"
-	for _p in /usr/libexec/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/ /usr/sbin/kokabiel-sd /usr/sbin/kokabiel-format-sd /usr/sbin/kokabiel-capture; do
+	for _p in /usr/libexec/kokabiel/ /usr/lib/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/ /usr/sbin/kokabiel-sd /usr/sbin/kokabiel-format-sd /usr/sbin/kokabiel-capture; do
 		grep -qxF "$_p" "$ROOT/etc/sysupgrade.conf" 2>/dev/null ||
 			echo "$_p" >>"$ROOT/etc/sysupgrade.conf"
 	done

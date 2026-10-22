@@ -14,6 +14,7 @@ start_service() {
 	procd_open_instance
 	# shellcheck disable=SC2086 # argv is space-separated by construction
 	procd_set_param command $_cmd
+	[ -f "$KK_SHIM" ] && procd_set_param env LD_PRELOAD="$KK_SHIM"
 	procd_set_param respawn
 	procd_set_param stdout 1
 	procd_set_param stderr 1
