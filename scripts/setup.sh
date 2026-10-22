@@ -54,8 +54,7 @@ guard_lockout() {
 
 install_packages() {
 	[ "$SKIP_PACKAGES" = 1 ] && return 0
-	# Package list is extended by later tasks (exporter, ...).
-	kk_pkg_install softflowd ethtool block-mount e2fsprogs sfdisk tcpdump
+	kk_pkg_install softflowd ethtool block-mount e2fsprogs sfdisk tcpdump prometheus-node-exporter-lua
 }
 
 # install_file SRC DST MODE: copy only when content differs.
@@ -112,6 +111,9 @@ install_files() {
 	install_file "$SCRIPT_DIR/sd.sh" "$ROOT/usr/sbin/kokabiel-sd" 0755
 	install_file "$SCRIPT_DIR/format-sd.sh" "$ROOT/usr/sbin/kokabiel-format-sd" 0755
 	install_file "$SCRIPT_DIR/capture.sh" "$ROOT/usr/sbin/kokabiel-capture" 0755
+	install_file "$SCRIPT_DIR/status.sh" "$ROOT/usr/sbin/kokabiel-status" 0755
+	install_file "$SCRIPT_DIR/files/prometheus-collectors/kokabiel.lua" \
+		"$ROOT/usr/lib/lua/prometheus-collectors/kokabiel.lua" 0644
 	install_file "$SCRIPT_DIR/files/capture-prep" "$LIBEXEC/capture-prep" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel" "$ROOT/etc/init.d/kokabiel" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel-flows" "$ROOT/etc/init.d/kokabiel-flows" 0755
@@ -119,7 +121,7 @@ install_files() {
 	install_file "$SCRIPT_DIR/files/hotplug/30-kokabiel" "$ROOT/etc/hotplug.d/iface/30-kokabiel" 0644
 	# Keep the installed files across sysupgrade.
 	mkdir -p "$ROOT/etc"
-	for _p in /usr/libexec/kokabiel/ /usr/lib/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/ /usr/sbin/kokabiel-sd /usr/sbin/kokabiel-format-sd /usr/sbin/kokabiel-capture; do
+	for _p in /usr/libexec/kokabiel/ /usr/lib/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/ /usr/sbin/kokabiel-sd /usr/sbin/kokabiel-format-sd /usr/sbin/kokabiel-capture /usr/sbin/kokabiel-status /usr/lib/lua/prometheus-collectors/kokabiel.lua; do
 		grep -qxF "$_p" "$ROOT/etc/sysupgrade.conf" 2>/dev/null ||
 			echo "$_p" >>"$ROOT/etc/sysupgrade.conf"
 	done
@@ -215,6 +217,51 @@ configure_firewall() {
 	fi
 }
 
+# ipv4_network DEV: print the IPv4 network (a.b.c.d/len) of DEV's first address.
+ipv4_network() {
+	ip -o -4 addr show dev "$1" 2>/dev/null | awk '
+		{
+			for (i = 1; i < NF; i++) if ($i == "inet") { c = $(i + 1); break }
+			if (c == "") exit
+			split(c, a, "/"); split(a[1], o, "."); p = a[2] + 0
+			if (p < 1 || p > 32 || length(o) != 4) exit
+			for (i = 1; i <= 4; i++) {
+				bits = p - (i - 1) * 8
+				if (bits < 0) bits = 0
+				if (bits > 8) bits = 8
+				blk = 2 ^ (8 - bits)
+				n[i] = int(o[i] / blk) * blk
+			}
+			printf "%d.%d.%d.%d/%d\n", n[1], n[2], n[3], n[4], p
+			exit
+		}'
+}
+
+# configure_metrics: exporter listens on the wan interface, port 9100; the
+# firewall opens it only to METRICS_ALLOWED_SRC (default: MGMT_IF's subnet).
+# With no computable source the port stays closed.
+configure_metrics() {
+	[ -e /etc/config/prometheus-node-exporter-lua ] || : >/etc/config/prometheus-node-exporter-lua
+	uci set prometheus-node-exporter-lua.main=prometheus-node-exporter-lua
+	uci set prometheus-node-exporter-lua.main.listen_interface=wan
+	uci set prometheus-node-exporter-lua.main.listen_port=9100
+
+	_src=$METRICS_ALLOWED_SRC
+	[ -n "$_src" ] || _src=$(ipv4_network "$MGMT_IF")
+	if [ -z "$_src" ]; then
+		kk_log "WARNING: cannot compute $MGMT_IF's IPv4 network and METRICS_ALLOWED_SRC is unset; metrics port 9100 stays closed"
+		uci -q delete firewall.kokabiel_metrics || true
+		return 0
+	fi
+	uci set firewall.kokabiel_metrics=rule
+	uci set firewall.kokabiel_metrics.name=Allow-Kokabiel-Metrics
+	uci set firewall.kokabiel_metrics.src=wan
+	uci set firewall.kokabiel_metrics.src_ip="$_src"
+	uci set firewall.kokabiel_metrics.proto=tcp
+	uci set firewall.kokabiel_metrics.dest_port=9100
+	uci set firewall.kokabiel_metrics.target=ACCEPT
+}
+
 configure_dropbear() {
 	uci -q delete 'dropbear.@dropbear[0].Interface' || true
 }
@@ -255,6 +302,8 @@ apply() {
 	kk_svc network reload
 	kk_svc firewall restart
 	kk_svc dropbear restart
+	kk_svc prometheus-node-exporter-lua enable
+	kk_svc prometheus-node-exporter-lua restart
 	[ "$ENABLE_LUCI" = 1 ] && kk_svc uhttpd restart
 	kk_svc kokabiel enable
 	kk_svc kokabiel start
@@ -292,6 +341,7 @@ main() {
 	configure_dhcp
 	configure_firewall
 	configure_dropbear
+	configure_metrics
 	configure_system
 	configure_services
 	apply

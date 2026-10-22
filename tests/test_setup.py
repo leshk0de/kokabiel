@@ -254,3 +254,63 @@ def test_setup_rerun_keeps_fstab_for_mounted_card(probe):
     assert r.rc == 0, r.err
     assert probe.uci("fstab.kokabiel_cap.uuid") == "00000000-0000-4000-8000-0000000000c1"
     assert probe.uci("fstab.kokabiel_cap.target") == "/tmp/capmnt"
+
+
+def metrics_ip_stub(probe, addr="192.0.2.20/24"):
+    probe.stub("ip", f"""case "$*" in
+*"-4 addr show dev eth0"*) echo "2: eth0    inet {addr} brd 192.0.2.255 scope global eth0" ;;
+esac""" if addr else "exit 0")
+
+
+def test_setup_metrics_rule_restricted(probe):
+    metrics_ip_stub(probe)
+    r = run_setup(probe)
+    assert r.rc == 0, r.err
+    f = "firewall.kokabiel_metrics"
+    assert probe.uci(f"{f}.src_ip") == "192.0.2.0/24"
+    assert probe.uci(f"{f}.dest_port") == "9100"
+    assert probe.uci(f"{f}.src") == "wan"
+    assert probe.uci(f"{f}.proto") == "tcp"
+    assert probe.uci(f"{f}.target") == "ACCEPT"
+    e = "prometheus-node-exporter-lua.main"
+    assert probe.uci(f"{e}.listen_interface") == "wan"
+    assert probe.uci(f"{e}.listen_port") == "9100"
+    calls = probe.calls()
+    assert "prometheus-node-exporter-lua enable" in calls
+    assert "prometheus-node-exporter-lua restart" in calls
+
+
+def test_setup_metrics_prefix_math(probe):
+    metrics_ip_stub(probe, "198.51.100.77/26")
+    assert run_setup(probe).rc == 0
+    assert probe.uci("firewall.kokabiel_metrics.src_ip") == "198.51.100.64/26"
+
+
+def test_setup_metrics_explicit_src(probe):
+    metrics_ip_stub(probe, "")
+    r = run_setup(probe, "COLLECTOR_HOST=192.0.2.10\nMETRICS_ALLOWED_SRC=203.0.113.0/24\n")
+    assert r.rc == 0, r.err
+    assert probe.uci("firewall.kokabiel_metrics.src_ip") == "203.0.113.0/24"
+
+
+def test_setup_metrics_uncomputable_skips_rule(probe):
+    metrics_ip_stub(probe, "")
+    r = run_setup(probe)
+    assert r.rc == 0, r.err
+    assert probe.uci("firewall.kokabiel_metrics") == ""
+    assert "metrics" in r.err.lower()
+
+
+def test_setup_metrics_installs_collector_and_status(probe):
+    metrics_ip_stub(probe)
+    assert run_setup(probe).rc == 0
+    assert probe.run("test -f /tmp/root/usr/lib/lua/prometheus-collectors/kokabiel.lua").rc == 0
+    assert probe.run("test -x /tmp/root/usr/sbin/kokabiel-status").rc == 0
+
+
+def test_setup_metrics_twice_is_idempotent(probe):
+    metrics_ip_stub(probe)
+    assert run_setup(probe).rc == 0
+    n = probe.run("uci show firewall | grep -c kokabiel_metrics=").out.strip()
+    assert run_setup(probe).rc == 0
+    assert probe.run("uci show firewall | grep -c kokabiel_metrics=").out.strip() == n == "1"

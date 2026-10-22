@@ -2,8 +2,9 @@
 # Kokabiel flow-export library. Source after common.sh; do not execute.
 
 # LD_PRELOAD shim forcing libpcap immediate mode (softflowd 1.1.0 lacks it).
+# Test hook: KOKABIEL_SHIM overrides the path.
 # shellcheck disable=SC2034 # read by init.d/kokabiel-flows and status
-KK_SHIM=/usr/lib/kokabiel/pcap_immediate.so
+KK_SHIM=${KOKABIEL_SHIM:-/usr/lib/kokabiel/pcap_immediate.so}
 
 # kk_flows_cmdline: print the exact softflowd argv from uci kokabiel.main.
 # track_level defaults to full, collector_port to 2055, export_version to 10.
