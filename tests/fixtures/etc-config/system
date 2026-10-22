@@ -1,0 +1,38 @@
+
+config system
+	option hostname 'FriendlyWrt'
+	option timezone 'CST-8'
+	option zonename 'Asia/Shanghai'
+	option ttylogin '1'
+	option log_size '128'
+	option urandom_seed '0'
+
+config timeserver 'ntp'
+	option enabled '1'
+	option enable_server '0'
+	list server 'time.apple.com'
+	list server 'ntp.tencent.com'
+	list server 'time.cloudflare.com'
+	list server '0.openwrt.pool.ntp.org'
+
+config led 'led_wan'
+	option name 'WAN'
+	option sysfs 'wan_led'
+	option trigger 'netdev'
+	option mode 'link'
+	option dev 'eth0'
+
+config led 'led_lan1'
+	option name 'LAN1'
+	option sysfs 'lan1_led'
+	option trigger 'netdev'
+	option mode 'link'
+	option dev 'eth1'
+
+config led 'led_lan2'
+	option name 'LAN2'
+	option sysfs 'lan2_led'
+	option trigger 'netdev'
+	option mode 'link'
+	option dev 'wlan0'
+

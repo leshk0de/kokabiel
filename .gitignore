@@ -219,6 +219,13 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Kokabiel: site-specific and generated files (the repo is public)
+site.env
+ansible/inventory/
+ansible/logs/
+ansible/captures/
+tests/private-denylist.txt
+
 # Local agent/worktree scratch
 .worktrees/
 .claude/

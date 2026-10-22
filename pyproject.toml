@@ -1,0 +1,16 @@
+[project]
+name = "kokabiel"
+version = "0.1.0"
+description = "Passive network-flow probe for the NanoPi R5C (FriendlyWrt / OpenWrt)"
+requires-python = ">=3.11"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.uv]
+package = false
