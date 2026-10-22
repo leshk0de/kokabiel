@@ -15,7 +15,7 @@
       ansible.builtin.set_fact:
         sd_log_file: >-
           {{ playbook_dir }}/logs/{{ inventory_hostname }}-sd-{{
-          (sd_info.serial | default('unknown') | string
+          (sd_info.serial | default('unknown', true) | string
           | regex_replace('[^A-Za-z0-9_-]', '_')) }}.json
 
     - name: Log the card description locally before asking
@@ -29,15 +29,21 @@
 
     - name: Ask before erasing the card
       ansible.builtin.pause:
-        prompt: "Erase SD card {{ sd_info.size_mb }}MB {{ sd_info.serial }} on {{ inventory_hostname }} and use it for captures? Type ERASE to confirm:"
+        prompt: "Erase SD card {{ sd_info.size_mb }}MB {{ sd_info.serial | default('unknown', true) }} on {{ inventory_hostname }} and use it for captures? Type ERASE to confirm:"
       register: sd_answer
       when: erase_new_sd_card is not defined
 
+    # erase_new_sd_card accepts any bool-truthy value (true, yes, 1, "true").
+    # A skipped or missing pause never counts as an answer.
     - name: Decide whether to erase
       ansible.builtin.set_fact:
         sd_do_erase: >-
-          {{ (erase_new_sd_card | default(false) | bool)
-          or ((sd_answer.user_input | default('')) == 'ERASE') }}
+          {{ (erase_new_sd_card is defined and (erase_new_sd_card | bool))
+          or (erase_new_sd_card is not defined
+              and sd_answer is defined
+              and sd_answer is not skipped
+              and sd_answer.user_input is defined
+              and sd_answer.user_input == 'ERASE') }}
 
     - name: Format the SD card
       ansible.builtin.command: >-

@@ -24,15 +24,20 @@
       changed_when: true
       failed_when: false
 
+    - name: Fail if the capture timed out
+      ansible.builtin.fail:
+        msg: "capture timed out: {{ capture_run.msg | default('no detail') }}"
+      when: capture_run.rc is not defined
+
     - name: Fail if another capture is running
       ansible.builtin.fail:
         msg: another capture is running
-      when: capture_run.rc == 75
+      when: capture_run.rc | default(-1) == 75
 
     - name: Fail if the capture failed
       ansible.builtin.fail:
-        msg: "kokabiel-capture failed (rc={{ capture_run.rc }}): {{ capture_run.stderr | default('') | trim }}"
-      when: capture_run.rc != 0
+        msg: "kokabiel-capture failed (rc={{ capture_run.rc | default(-1) }}): {{ capture_run.stderr | default('') | trim }}"
+      when: capture_run.rc | default(-1) != 0
 
     - name: Parse the capture summary
       ansible.builtin.set_fact:
