@@ -13,12 +13,15 @@
     - hardening
     - sd
 
+# Note: --limit does not apply here (localhost is outside the limit), so this
+# play is skipped when running with --limit; the debug task is tagged always.
 - name: Monitoring hand-off
   hosts: localhost
   connection: local
   gather_facts: false
   tasks:
     - name: Print a Prometheus scrape config for the probes
+      tags: [always]
       ansible.builtin.debug:
         msg: |-
           # Paste under scrape_configs: in prometheus.yml

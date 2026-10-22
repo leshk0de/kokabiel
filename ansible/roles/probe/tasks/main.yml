@@ -11,37 +11,21 @@
 - name: Check config values are safe to write into site.env
   ansible.builtin.assert:
     that:
-      - item | string is match('^[^\x27\x22\\\\\n\r]*$')
+      - not (item | string is search('[\x27\x22\\\\\n\r]'))
     fail_msg: A site.env value contains a quote, backslash or newline.
     quiet: true
-  loop:
-    - "{{ collector_host }}"
-    - "{{ collector_port }}"
-    - "{{ export_version }}"
-    - "{{ capture_if }}"
-    - "{{ mgmt_if }}"
-    - "{{ probe_name }}"
-    - "{{ capture_dir }}"
-    - "{{ capture_sd_max_mb }}"
-    - "{{ capture_ram_max_mb }}"
-    - "{{ enable_luci }}"
-    - "{{ track_level }}"
-    - "{{ syslog_host }}"
-    - "{{ metrics_allowed_src }}"
+  loop: >-
+    {{ [collector_host, collector_port, export_version, capture_if, mgmt_if,
+    probe_name, capture_dir, capture_sd_max_mb, capture_ram_max_mb, enable_luci,
+    track_level, syslog_host, metrics_allowed_src] }}
 
-- name: Check the libpcap immediate-mode shim was built on the controller
-  ansible.builtin.stat:
-    path: "{{ probe_shim_src }}"
-  delegate_to: localhost
-  become: false
-  register: probe_shim_stat
-
-- name: Fail early if the shim is missing
+- name: Fail early if the immediate-mode shim was not built on the controller
   ansible.builtin.fail:
     msg: >-
       build/pcap_immediate.so not found. Run 'make shim' in the repository root
       first; without the shim softflowd processes no flows.
-  when: not probe_shim_stat.stat.exists
+  when: probe_shim_src is not file
+  run_once: true
 
 - name: Create /etc/kokabiel
   ansible.builtin.file:

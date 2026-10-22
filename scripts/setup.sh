@@ -150,7 +150,7 @@ write_kokabiel_config() {
 	uci set kokabiel.main.track_level="$TRACK_LEVEL"
 }
 
-# uci_set_list PKG.SEC.OPT VALUE: make the list exactly VALUE; untouched when
+# uci_set_list PKG.SEC.OPT VALUE: (a single VALUE) make the list exactly VALUE; untouched when
 # already so (delete + add_list would register a change on every run).
 uci_set_list() {
 	[ "$(uci -q get "$1" 2>/dev/null)" = "$2" ] && return 0
