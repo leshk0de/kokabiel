@@ -1,4 +1,4 @@
-SH_FILES := $(wildcard scripts/*.sh scripts/lib/*.sh scripts/files/capture-prep scripts/files/hotplug/*)
+SH_FILES := $(wildcard scripts/*.sh scripts/lib/*.sh scripts/files/capture-prep scripts/files/init.d/* scripts/files/hotplug/*)
 
 .PHONY: test lint tools
 

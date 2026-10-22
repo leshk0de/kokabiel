@@ -1,0 +1,4 @@
+#!/bin/sh
+# Kokabiel: re-run capture-prep when the capture interface comes up.
+[ "$ACTION" = ifup ] && [ "$INTERFACE" = capture ] || exit 0
+"${KOKABIEL_LIBEXEC:-/usr/libexec/kokabiel}/capture-prep" >/dev/null 2>&1 &

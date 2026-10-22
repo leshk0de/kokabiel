@@ -1,0 +1,56 @@
+#!/bin/sh
+# Kokabiel: prepare the capture interface after verifying the NICs are the
+# ones configured (guards against eth0/eth1 swapping on reboot).
+# Exit codes: 0 prepared, 10 MAC guard refused, 3 no config.
+
+KK_LIB=${KOKABIEL_LIB:-$(dirname "$0")/../lib}
+[ -d "$KK_LIB" ] || KK_LIB=$(dirname "$0")
+[ -f "$KK_LIB/common.sh" ] || KK_LIB=/usr/libexec/kokabiel
+# shellcheck disable=SC1091 # located at runtime
+. "$KK_LIB/common.sh"
+
+CAPTURE_IF=$(kk_uci_get capture_if)
+CAPTURE_MAC=$(kk_uci_get capture_mac)
+MGMT_IF=$(kk_uci_get mgmt_if)
+MGMT_MAC=$(kk_uci_get mgmt_mac)
+[ -n "$CAPTURE_IF" ] || kk_die "no kokabiel config (capture_if unset)" 3
+
+lower() {
+	# shellcheck disable=SC2018,SC2019
+	echo "$1" | tr 'A-Z' 'a-z'
+}
+
+guard_fail() {
+	kk_log "MAC guard failed: $1"
+	kk_svc kokabiel-flows stop
+	exit 10
+}
+
+# Every configured (interface, MAC) pair must match what sysfs reports.
+check_mac() {
+	[ -n "$1" ] && [ -n "$2" ] || return 0
+	_have=$(kk_mac "$1" 2>/dev/null) || guard_fail "$1 not found"
+	[ "$_have" = "$(lower "$2")" ] || guard_fail "$1 has MAC $_have, expected $(lower "$2")"
+}
+
+[ -n "$CAPTURE_MAC" ] || guard_fail "capture_mac not configured"
+check_mac "$CAPTURE_IF" "$CAPTURE_MAC"
+check_mac "$MGMT_IF" "$MGMT_MAC"
+
+ip link set dev "$CAPTURE_IF" up promisc on || kk_die "cannot bring up $CAPTURE_IF" 1
+
+for _f in gro gso tso lro rxvlan; do
+	ethtool -K "$CAPTURE_IF" "$_f" off >/dev/null 2>&1 ||
+		kk_log "ethtool: $_f off not supported on $CAPTURE_IF"
+done
+
+_rx=$(ethtool -g "$CAPTURE_IF" 2>/dev/null |
+	awk '/^Pre-set maximums/ {m=1; next} /^Current hardware/ {m=0} m && /^RX:/ {print $2; exit}')
+case $_rx in
+'' | *[!0-9]*) kk_log "could not determine max RX ring for $CAPTURE_IF" ;;
+*) ethtool -G "$CAPTURE_IF" rx "$_rx" >/dev/null 2>&1 || kk_log "ethtool -G rx $_rx failed" ;;
+esac
+
+sysctl -w "net.ipv6.conf.$CAPTURE_IF.disable_ipv6=1" >/dev/null 2>&1 ||
+	kk_log "could not disable IPv6 on $CAPTURE_IF"
+exit 0
