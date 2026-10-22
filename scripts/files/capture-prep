@@ -35,6 +35,7 @@ check_mac() {
 
 [ -n "$CAPTURE_MAC" ] || guard_fail "capture_mac not configured"
 check_mac "$CAPTURE_IF" "$CAPTURE_MAC"
+[ -n "$MGMT_IF" ] && [ -n "$MGMT_MAC" ] || guard_fail "management identity not recorded"
 check_mac "$MGMT_IF" "$MGMT_MAC"
 
 ip link set dev "$CAPTURE_IF" up promisc on || kk_die "cannot bring up $CAPTURE_IF" 1

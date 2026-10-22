@@ -101,3 +101,41 @@ def test_init_script_structure(probe):
     assert "START=19" in src
     assert "capture-prep" in src
     assert "KOKABIEL_LIBEXEC" in src
+
+
+def assert_refused(probe, r):
+    assert r.rc == 10, r.err
+    assert probe.calls("ip") == []
+    assert probe.calls("ethtool") == []
+    assert probe.calls("sysctl") == []
+    assert "kokabiel-flows stop" in probe.calls()
+    assert any("MAC guard failed" in c for c in probe.calls("logger"))
+
+
+def test_guard_capture_mismatch_only(probe):
+    setup(probe, eth1="02:00:00:00:00:99")
+    assert_refused(probe, probe.run(PREP, env=ENV))
+
+
+def test_guard_mgmt_mismatch_only(probe):
+    setup(probe, eth0="02:00:00:00:00:99")
+    assert_refused(probe, probe.run(PREP, env=ENV))
+
+
+def test_guard_capture_mac_unset(probe):
+    setup(probe, conf=CONF.replace("\toption capture_mac '02:00:00:00:00:02'\n", ""))
+    assert_refused(probe, probe.run(PREP, env=ENV))
+
+
+def test_guard_mgmt_identity_unset(probe):
+    conf = "".join(ln + "\n" for ln in CONF.splitlines() if "mgmt_" not in ln)
+    setup(probe, conf=conf)
+    r = probe.run(PREP, env=ENV)
+    assert_refused(probe, r)
+    assert "management identity not recorded" in r.err
+
+
+def test_guard_capture_iface_missing(probe):
+    setup(probe)
+    probe.run("rm -rf /tmp/sys/class/net/eth1")
+    assert_refused(probe, probe.run(PREP, env=ENV))
