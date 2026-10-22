@@ -1,0 +1,110 @@
+# Collector notes
+
+Kokabiel does not deploy or configure your collector, Vector, an index or dashboards. These notes
+cover what the collector side needs to know. Example queries are generic and assume a
+Quickwit/Elasticsearch-style index.
+
+## Pointing the probe at a collector
+
+Set the destination in `site.env`:
+
+```sh
+COLLECTOR_HOST=<COLLECTOR_IP>   # e.g. 192.0.2.10
+COLLECTOR_PORT=2055             # UDP
+EXPORT_VERSION=10               # 10 = IPFIX (default), 9 = NetFlow v9
+```
+
+[goflow2](https://github.com/netsampler/goflow2) decodes both IPFIX and NetFlow v9 into one schema, so
+either setting works with it, and so with any v9/IPFIX collector listening on that UDP port. Flows are
+unsampled; nothing needs multiplying by a sampling rate.
+
+## Warning: no per-flow live lookups (feedback loop)
+
+A collector pipeline that performs an **uncached, live lookup for every flow** (reverse DNS is the
+usual one) generates DNS traffic. That traffic becomes flows, which trigger more lookups. Raising a
+gateway's sampling from 1:10 to 1:2 tipped exactly such a loop into a roughly 50x flood. Unsampled
+export from a probe can do the same, faster.
+
+Fix it before turning the probe on:
+
+- Resolve names **at query time**, or enrich lazily from a cache.
+- If you must enrich during ingest, cache aggressively and bound the lookup rate.
+- Never do per-flow live lookups.
+
+Related: keep the probe's management path off the mirrored link, so its own export is not captured.
+See [planning.md](planning.md).
+
+## Telling sources apart
+
+If the probe shares an index with the gateway's flows, distinguish them by **exporter address**: in
+goflow2 output this is `sampler_address`. Use it as a filter or facet. Do not rely on the gateway's
+exported `sampling_rate`: it was observed to stay stale after a sampling change.
+
+Also note the gateway's flows are sampled (minimum 1:2) while the probe's are not, so do not compare
+counts between them directly.
+
+## Example queries
+
+Field names follow goflow2 (`src_addr`, `dst_addr`, `dst_port`, `proto`, `tcp_flags`, `packets`,
+`bytes`, `time_flow_start_ns`). Adjust to your schema. Always restrict to the probe with
+`sampler_address:<PROBE_IP>` (for example `192.0.2.20`).
+
+### Scan detection: fan-out
+
+One source reaching many distinct destinations or ports within a few minutes.
+
+```sql
+SELECT src_addr,
+       COUNT(DISTINCT dst_addr) AS dsts,
+       COUNT(DISTINCT dst_port) AS ports
+FROM flows
+WHERE sampler_address = '192.0.2.20'
+  AND time > now() - interval '5 minutes'
+GROUP BY src_addr
+HAVING COUNT(DISTINCT dst_addr) > 50 OR COUNT(DISTINCT dst_port) > 100
+```
+
+As an Elasticsearch/Quickwit-style aggregation: filter on `sampler_address` and a 5-minute time range;
+terms aggregation on `src_addr` with sub-aggregations `cardinality(dst_addr)` and
+`cardinality(dst_port)`; keep buckets above your thresholds.
+
+### Scan detection: SYN-only one-packet flows
+
+```sql
+SELECT src_addr, COUNT(*) AS probes
+FROM flows
+WHERE sampler_address = '192.0.2.20'
+  AND tcp_flags = 2 AND packets = 1
+  AND time > now() - interval '5 minutes'
+GROUP BY src_addr
+ORDER BY probes DESC
+```
+
+(`tcp_flags == 2` is SYN alone.) The same shape applies in an aggregation: filter `tcp_flags:2 AND
+packets:1`, terms on `src_addr`.
+
+### Beaconing
+
+The same `src -> dst:port` at regular intervals with small byte counts.
+
+```sql
+SELECT src_addr, dst_addr, dst_port,
+       COUNT(*) AS flows,
+       AVG(bytes) AS avg_bytes,
+       STDDEV(interval_seconds) AS jitter
+FROM flows_with_intervals   -- flows with the gap since the previous flow of the same tuple
+WHERE sampler_address = '192.0.2.20'
+  AND time > now() - interval '6 hours'
+GROUP BY src_addr, dst_addr, dst_port
+HAVING COUNT(*) > 20 AND AVG(bytes) < 2000 AND STDDEV(interval_seconds) < 5
+```
+
+Most search engines cannot compute the gap natively. Approximate it by bucketing with a
+`date_histogram` per `(src, dst, port)` and looking for buckets that are filled at an even cadence,
+or compute the interval in your query tool. Small, steady, long-lived patterns to a single external
+host are the signal; expect to whitelist legitimate pollers (NTP, update checks, cloud sync).
+
+### Caveats
+
+- Scans blocked by client isolation inside an AP never reach the wire, so they will not appear.
+- Names in results should be resolved at query time (see the warning above).
