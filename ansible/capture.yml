@@ -1,11 +1,21 @@
 ---
-# Usage: ansible-playbook capture.yml -e target=192.0.2.50 [-e seconds=60]
+# Usage: ansible-playbook capture.yml -l <probe> -e target=192.0.2.50 [-e seconds=60]
 - name: Capture traffic for a target and fetch the pcaps
   hosts: all
   gather_facts: false
   vars:
     capture_seconds: "{{ seconds | default(60) | int }}"
   tasks:
+    - name: Require an explicit probe (-l)
+      ansible.builtin.assert:
+        that:
+          - ansible_limit is defined
+          - ansible_limit | string | length > 0
+        fail_msg: >-
+          Refusing to capture on every probe: pass the probe with -l <probe>
+          (e.g. ansible-playbook capture.yml -l probe1 -e target=192.0.2.50)
+        quiet: true
+
     - name: Require a target
       ansible.builtin.assert:
         that:

@@ -24,6 +24,6 @@ lint:
 	@if [ -d ansible ]; then (cd ansible && ANSIBLE_LOG_PATH=/dev/null ansible-lint); else echo "ansible/ not present yet; skipping ansible-lint"; fi
 
 tools:
-	brew install shellcheck
+	brew install shellcheck hudochenkov/sshpass/sshpass
 	uv tool install ansible-core
 	uv tool install ansible-lint

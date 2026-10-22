@@ -91,12 +91,13 @@ lives elsewhere.
    Probes live in the group `kokabiel`; `collector_host` is the only required variable.
 3. **Install tooling and build the shim:**
    ```sh
-   make tools   # shellcheck, ansible-core, ansible-lint (uses Homebrew: macOS-oriented; elsewhere install them yourself)
+   make tools   # shellcheck, sshpass, ansible-core, ansible-lint (uses Homebrew: macOS-oriented; elsewhere install them yourself)
    make shim    # build/pcap_immediate.so
    ```
 4. **First run, before cabling eth1.** Host key checking is on, so SSH to the probe once
    (`ssh root@<probe>`, accept the key) or run `ssh-keyscan <probe> >> ~/.ssh/known_hosts` first. Use the temporary password; skip the status check, which
-   needs the capture link up:
+   needs the capture link up. `--ask-pass` needs `sshpass` on your workstation (`make tools`
+   installs it via `brew install hudochenkov/sshpass/sshpass`; on Linux use your package manager):
    ```sh
    cd ansible
    ansible-playbook site.yml --ask-pass --skip-tags status
@@ -119,7 +120,10 @@ kmods for 6.12, so they will not load (the scripts refuse to install them).
 
 - eth1 is detached from `br-lan`, gets no address (IPv6 off), no DHCP/RA, a DROP-only firewall zone (`kk_capture`),
   promiscuous mode and offloads off (GRO/GSO/TSO/LRO, rx-VLAN) re-applied on every link-up.
-- A MAC-based interface-role guard refuses to treat the wrong NIC as the capture port.
+- An interface-role guard (by PCI device path, recorded at first setup) refuses to treat the wrong
+  NIC as the capture port and keeps softflowd stopped until it passes. MACs cannot serve here:
+  FriendlyWrt pins them per interface name. After a deliberate hardware change, rerun
+  `setup.sh --rerecord-nics`.
 - `softflowd` runs under procd with respawn, exporting IPFIX (v10, or v9 fallback) with full
   5-tuple tracking and a 65536-flow table.
 - `dnsmasq` is restricted to loopback; the web UI (LuCI) is off. With `enable_luci: true` it binds
@@ -171,7 +175,8 @@ from the role `defaults/`.
 
 Everything on the probe is POSIX `sh`. Copy `scripts/` and your `build/pcap_immediate.so` to the
 probe, write a `site.env` from [site.env.example](site.env.example), and run
-`scripts/setup.sh --env site.env` as root. Format an SD card with
+`scripts/setup.sh --env site.env` as root (add `--rerecord-nics` only after a deliberate NIC or
+`CAPTURE_IF`/`MGMT_IF` change). Format an SD card with
 `kokabiel-format-sd --device /dev/mmcblkN` (same safety checks and `ERASE` confirmation). You then
 handle SSH keys, passphrases and Python yourself.
 
@@ -179,7 +184,7 @@ handle SSH keys, passphrases and Python yourself.
 
 | Command | What it does |
 |---|---|
-| `kokabiel-status` | read-only health check printing OK/FAIL/INFO lines, exit 1 on any FAIL. Checks the capture link, promiscuous mode, no address, MAC guard, softflowd running, the shim loaded (`flows_shim`), and that listeners are a subset of ports 22 and 9100 |
+| `kokabiel-status` | read-only health check printing OK/FAIL/INFO lines, exit 1 on any FAIL. Checks the capture link, promiscuous mode, no address, NIC guard (`nic_guard`: PCI paths match the recorded ones), softflowd running, the shim loaded (`flows_shim`), and that non-loopback listeners are a subset of TCP 22 and 9100 (UDP: only the DHCP clients, 68 and 546) |
 | `kokabiel-capture <ip-or-mac> [seconds] [--max-mb N]` | time-boxed, size-capped `tcpdump` for one device to the SD card (RAM fallback). Last stdout line is JSON; exit codes 0 ok, 2 usage, 3 config, 4 space/memory, 5 tcpdump failed, 75 busy |
 | `kokabiel-sd describe\|mount` | show or mount the SD card |
 
@@ -198,7 +203,7 @@ investigate one wired device instead, re-point the switch's mirror (see
 ## Prometheus and Grafana
 
 Each probe runs `prometheus-node-exporter-lua` on TCP 9100 of the management interface: standard
-`node_*` metrics plus `kokabiel_*` (capture link, promisc, MAC guard, softflowd flows and drops,
+`node_*` metrics plus `kokabiel_*` (capture link, promisc, NIC guard, softflowd flows and drops,
 storage, temperature, capture jobs). The firewall admits scrapes only from `metrics_allowed_src`
 (default the management subnet; for in-cluster Prometheus use the node address after SNAT). The
 play prints a scrape snippet for your probes at the end. Import
@@ -241,7 +246,7 @@ The user button reboots the device (FriendlyWrt trigger); there is no long-press
 | **softflowd 1.1.0 processes zero packets** (no libpcap immediate mode; upstream fix irino/softflowd `f5c0f99103`, PR #71, unreleased) | `LD_PRELOAD` shim, `make shim` required before deploy; `kokabiel-status` checks `flows_shim` |
 | FriendlyWrt 25.12 base: `apk` instead of `opkg`, fw4/nftables, kernel 6.1; major upgrades are reflash-only | detect the package manager; rebuild = reflash + play |
 | Kernel 6.1 vs feed kmods built for 6.12 | never install `kmod-*`; the scripts refuse |
-| `eth0`/`eth1` names reported to swap on some boots | MAC-based interface-role guard, metric and alert |
+| `eth0`/`eth1` names reported to swap on some boots | PCI-path interface-role guard that gates softflowd, metric and alert |
 | "PHY link never came up" on eth1 at boot (seen on upstream 24.10-rc) | link-up metric; hotplug re-applies settings when the link comes up |
 | r8125 2.5G link flapping (reported on the sibling R6S) | carrier-change metric; fallback: limit advertised speed to 1G |
 | NIC offloads silently distort captures | offloads off on the capture NIC, re-applied on link-up |

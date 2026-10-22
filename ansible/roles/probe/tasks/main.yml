@@ -68,9 +68,13 @@
   register: probe_setup
   changed_when: "'KOKABIEL_CHANGED' in probe_setup.stdout_lines"
 
+# Retried: right after setup softflowd may still be (re)starting behind the NIC guard.
 - name: Check probe health
   ansible.builtin.command: /usr/sbin/kokabiel-status
   register: probe_status
   changed_when: false
   failed_when: probe_status.rc != 0
+  until: probe_status.rc == 0
+  retries: 5
+  delay: 2
   tags: [status]
