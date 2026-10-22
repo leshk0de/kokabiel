@@ -22,13 +22,18 @@ LOCK=$RUN/kokabiel-capture.lock
 STATE=$RUN/kokabiel-capture.state
 HAVE_LOCK=0
 ERRF=
+CHILD=
 
 # shellcheck disable=SC2329 # invoked via trap
 cleanup() {
+	if [ -n "$CHILD" ]; then
+		kill "$CHILD" 2>/dev/null
+		wait "$CHILD" 2>/dev/null
+	fi
 	[ -z "$ERRF" ] || rm -f "$ERRF"
 	if [ "$HAVE_LOCK" = 1 ]; then
 		rm -f "$STATE"
-		rmdir "$LOCK" 2>/dev/null
+		rm -rf "$LOCK"
 	fi
 }
 trap cleanup EXIT
@@ -37,9 +42,10 @@ trap 'exit 143' TERM
 
 # ---- target validation (strict; nothing else runs before this) ----
 
+# Digits only, no leading zeros (so ash arithmetic never reads octal).
 is_uint() {
 	case $1 in
-	'' | *[!0-9]*) return 1 ;;
+	'' | *[!0-9]* | 0[0-9]*) return 1 ;;
 	esac
 }
 
@@ -186,9 +192,17 @@ fi
 
 mkdir -p "$RUN" 2>/dev/null
 if ! mkdir "$LOCK" 2>/dev/null; then
-	kk_die "a capture is already running" 75
+	# Reclaim a lock whose owner died (SIGKILL, OOM, power loss); a lock
+	# without a readable pid is treated as stale too.
+	_opid=$(cat "$LOCK/pid" 2>/dev/null)
+	if is_uint "$_opid" && kill -0 "$_opid" 2>/dev/null; then
+		kk_die "a capture is already running (pid $_opid)" 75
+	fi
+	rm -rf "$LOCK"
+	mkdir "$LOCK" 2>/dev/null || kk_die "a capture is already running" 75
 fi
 HAVE_LOCK=1
+echo "$$" >"$LOCK/pid"
 
 # ---- space / memory check ----
 
@@ -210,19 +224,23 @@ SAFE=$(printf '%s' "$TARGET" | tr ':.' '--')
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BASE=$DIR/$PROBE-$SAFE-$STAMP.pcap
 START=$(date +%s)
-printf 'target=%s\nstarted=%s\ndir=%s\n' "$TARGET" "$START" "$DIR" >"$STATE"
+printf 'target=%s\nstarted=%s\ndir=%s\npid=%s\n' "$TARGET" "$START" "$DIR" "$$" >"$STATE"
 ERRF=$RUN/kokabiel-capture.$$.err
 CSIZE=$((CAP / 5))
 [ "$CSIZE" -ge 1 ] || CSIZE=1
 
 if [ "$KIND" = mac ]; then
 	timeout "$SECONDS_" tcpdump -i "$CAPTURE_IF" -s 0 -U -w "$BASE" -C "$CSIZE" -W 5 \
-		ether host "$TARGET" or '(' vlan and ether host "$TARGET" ')' 2>"$ERRF"
+		ether host "$TARGET" or '(' vlan and ether host "$TARGET" ')' 2>"$ERRF" &
 else
 	timeout "$SECONDS_" tcpdump -i "$CAPTURE_IF" -s 0 -U -w "$BASE" -C "$CSIZE" -W 5 \
-		host "$TARGET" or '(' vlan and host "$TARGET" ')' 2>"$ERRF"
+		host "$TARGET" or '(' vlan and host "$TARGET" ')' 2>"$ERRF" &
 fi
+# Background + wait so INT/TERM run the trap at once instead of after tcpdump.
+CHILD=$!
+wait "$CHILD"
 RC=$?
+CHILD=
 END=$(date +%s)
 
 PACKETS=$(sed -n 's/^\([0-9][0-9]*\) packets\{0,1\} captured.*/\1/p' "$ERRF" | tail -n 1)
