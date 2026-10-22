@@ -221,9 +221,10 @@ mkdir -p "$DIR" || kk_die "cannot create $DIR" 4
 # ---- capture ----
 
 SAFE=$(printf '%s' "$TARGET" | tr ':.' '--')
-STAMP=$(date -u +%Y%m%dT%H%M%SZ)
-BASE=$DIR/$PROBE-$SAFE-$STAMP.pcap
+# One clock reading: the filename stamp is derived from START, never read separately.
 START=$(date +%s)
+STAMP=$(date -u -d "@$START" +%Y%m%dT%H%M%SZ)
+BASE=$DIR/$PROBE-$SAFE-$STAMP.pcap
 printf 'target=%s\nstarted=%s\ndir=%s\npid=%s\n' "$TARGET" "$START" "$DIR" "$$" >"$STATE"
 ERRF=$RUN/kokabiel-capture.$$.err
 CSIZE=$((CAP / 5))

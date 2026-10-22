@@ -4,7 +4,7 @@
 # Exits 1 if any check is FAIL, else 0.
 #
 # Test hooks: KOKABIEL_SOFTFLOWCTL (default /usr/sbin/softflowctl),
-#             KOKABIEL_CTL (softflowd control socket), KOKABIEL_RUN (/var/run).
+#             KOKABIEL_CTL (softflowd control socket), KOKABIEL_CTL_TIMEOUT (5 s), KOKABIEL_RUN (/var/run).
 
 KK_LIB="${KOKABIEL_LIB:-$(dirname "$0")/lib}"
 [ -d "$KK_LIB" ] || KK_LIB=/usr/libexec/kokabiel
@@ -79,7 +79,7 @@ check mac_guard "$guard" "$detail"
 
 if [ -f "$KK_SHIM" ]; then ok flows_shim "$KK_SHIM"; else fail flows_shim "missing $KK_SHIM (softflowd processes no packets without it)"; fi
 
-stats=$("$SOFTFLOWCTL" -c "$CTL" statistics 2>/dev/null)
+stats=$(timeout "${KOKABIEL_CTL_TIMEOUT:-5}" "$SOFTFLOWCTL" -c "$CTL" statistics 2>/dev/null)
 src=$?
 check softflowd_running "$src" "control socket $CTL"
 

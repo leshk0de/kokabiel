@@ -185,3 +185,15 @@ def test_capture_tcpdump_failure_exit_5(probe):
     assert r.rc == 5
     assert json.loads(r.out.strip().splitlines()[-1])["exit"] == "error"
     assert probe.run("ls /tmp/run/kokabiel-capture.*").rc != 0
+
+
+def test_capture_stamp_derives_from_started(probe):
+    """Filename stamp and state `started` come from one clock reading."""
+    probe.stub("tcpdump", 'cat "$KOKABIEL_RUN/kokabiel-capture.state" > /tmp/state.rec; '
+               'while [ $# -gt 0 ]; do [ "$1" = -w ] && echo "$2" > /tmp/w.rec; shift; done; exit 0')
+    probe.stub("timeout", TIMEOUT_EXEC)
+    r = cap(probe, "192.0.2.50 5")
+    assert r.rc == 0, r.err
+    started = probe.run("sed -n 's/^started=//p' /tmp/state.rec").out.strip()
+    stamp = probe.run(f"date -u -d @{started} +%Y%m%dT%H%M%SZ").out.strip()
+    assert stamp and stamp in probe.read("/tmp/w.rec")

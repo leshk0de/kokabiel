@@ -8,6 +8,7 @@ ENV = {
     "KOKABIEL_SOFTFLOWCTL": "/tmp/stubs/softflowctl",
     "KOKABIEL_SHIM": "/tmp/shim.so",
     "KOKABIEL_RUN": "/tmp/run",
+    "KOKABIEL_CTL_TIMEOUT": "1",
 }
 NETSTAT_OK = (
     "cat <<'EOF'\n"
@@ -91,3 +92,13 @@ def test_status_unexpected_listener(probe):
     r = run()
     assert r.rc == 1
     assert "FAIL listeners" in r.out and "7681" in r.out
+
+
+def test_status_softflowd_hang_fails_quickly(probe):
+    import time
+    run = status(probe)
+    probe.stub("softflowctl", "exec sleep 30")
+    t = time.time()
+    r = run()
+    assert time.time() - t < 10
+    assert r.rc == 1 and "FAIL softflowd_running" in r.out

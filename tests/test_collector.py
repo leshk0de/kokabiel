@@ -13,7 +13,18 @@ UCI = """config kokabiel 'main'
 \toption mgmt_mac '02:00:00:00:00:01'
 \toption capture_dir '/tmp/capdir'
 """
+# The image's BusyBox has no timeout applet and the default stub does not exec
+# its command, so tests install a working one.
+TIMEOUT_STUB = """n=$1; shift
+"$@" & p=$!
+( sleep "$n"; kill $p ) >/dev/null 2>&1 &
+w=$!
+wait $p; rc=$?
+kill $w 2>/dev/null
+[ $rc -ge 128 ] && exit 124
+exit $rc"""
 ENV = {
+    "KOKABIEL_CTL_TIMEOUT": "1",
     "KOKABIEL_SOFTFLOWCTL": "/tmp/stubs/softflowctl",
     "KOKABIEL_RUN": "/tmp/run",
     "KOKABIEL_OVERLAY": "/tmp",
@@ -31,6 +42,7 @@ def setup(probe, flags="0x1103", mac1="02:00:00:00:00:01", mac2="02:00:00:00:00:
                    rx_dropped=3, rx_missed_errors=4, carrier_changes=5)
     probe.write("/tmp/fixture.txt", FIXTURE)
     probe.stub("softflowctl", "cat /tmp/fixture.txt")
+    probe.stub("timeout", TIMEOUT_STUB)
     probe.run("mkdir -p /tmp/run")
 
 
@@ -144,3 +156,31 @@ def test_collector_unexpected_listeners(probe):
                "tcp        0      0 :::7681                 :::*                    LISTEN\n"
                "EOF")
     assert collect(probe)["kokabiel_unexpected_listeners"] == 1
+
+
+def test_collector_softflowd_hang_times_out(probe):
+    import time
+    setup(probe)
+    probe.stub("softflowctl", "exec sleep 30")
+    t = time.time()
+    m = collect(probe)
+    assert time.time() - t < 10
+    assert m["kokabiel_softflowd_up"] == 0
+
+
+def test_collector_guard_fail_closed_when_unrecorded(probe):
+    setup(probe)
+    probe.write("/etc/config/kokabiel", UCI.replace("\toption mgmt_mac '02:00:00:00:00:01'\n", ""))
+    assert collect(probe)["kokabiel_interface_guard_ok"] == 0
+
+
+def test_collector_capture_bytes_stamp_slack(probe):
+    setup(probe)
+    probe.run("mkdir -p /tmp/capdir /tmp/proc/4242")
+    probe.write("/tmp/run/kokabiel-capture.state",
+                "target=192.0.2.9\nstarted=1700000000\ndir=/tmp/capdir\npid=4242\n")
+    probe.run("rm -f /tmp/capdir/*")
+    # started = 20231114T221320Z: one second earlier counts, three seconds earlier does not
+    probe.run("head -c 100 /dev/zero > /tmp/capdir/probe-192-0-2-9-20231114T221319Z.pcap;"
+              "head -c 7 /dev/zero > /tmp/capdir/probe-192-0-2-9-20231114T221317Z.pcap")
+    assert collect(probe)["kokabiel_capture_bytes"] == 100

@@ -5,7 +5,7 @@
 --
 -- Test hooks (environment): KOKABIEL_SYSFS (/sys), KOKABIEL_PROC (/proc),
 -- KOKABIEL_RUN (/var/run), KOKABIEL_SOFTFLOWCTL (/usr/sbin/softflowctl),
--- KOKABIEL_CTL (softflowd control socket), KOKABIEL_OVERLAY (/overlay).
+-- KOKABIEL_CTL (softflowd control socket), KOKABIEL_OVERLAY (/overlay), KOKABIEL_CTL_TIMEOUT (5 s).
 
 local function env(name, default)
   local v = os.getenv(name)
@@ -18,6 +18,7 @@ local PROC = env("KOKABIEL_PROC", "/proc")
 local RUN = env("KOKABIEL_RUN", "/var/run")
 local SOFTFLOWCTL = env("KOKABIEL_SOFTFLOWCTL", "/usr/sbin/softflowctl")
 local CTL = env("KOKABIEL_CTL", "/var/run/kokabiel-softflowd.ctl")
+local CTL_TIMEOUT = tonumber(env("KOKABIEL_CTL_TIMEOUT", "5")) or 5
 local OVERLAY = env("KOKABIEL_OVERLAY", "/overlay")
 
 local function read_trim(path)
@@ -102,15 +103,17 @@ local function capture_interface()
   local ok = 1
   for _, pair in ipairs({ { "capture_if", "capture_mac" }, { "mgmt_if", "mgmt_mac" } }) do
     local ifn, want = uci(pair[1]), lower(uci(pair[2]))
-    if ifn and want then
-      if lower(read_trim(SYSFS .. "/class/net/" .. ifn .. "/address")) ~= want then ok = 0 end
+    -- fail closed: unrecorded or unreadable counts as a mismatch
+    if not (ifn and want)
+        or lower(read_trim(SYSFS .. "/class/net/" .. ifn .. "/address")) ~= want then
+      ok = 0
     end
   end
   metric("kokabiel_interface_guard_ok", "gauge", nil, ok)
 end
 
 local function softflowd()
-  local out, rc = run(q(SOFTFLOWCTL) .. " -c " .. q(CTL) .. " statistics")
+  local out, rc = run("timeout " .. CTL_TIMEOUT .. " " .. q(SOFTFLOWCTL) .. " -c " .. q(CTL) .. " statistics")
   local active = tonumber(out:match("Number of active flows:%s*(%d+)"))
   local up = (rc == 0 and active ~= nil) and 1 or 0
   metric("kokabiel_softflowd_up", "gauge", nil, up)
@@ -182,7 +185,8 @@ local function capture_job()
   end
   -- Sum this job's files: <probe>-<target with : and . as ->-<UTC stamp>.pcap[N]
   local safe = state.target:gsub("[:%.]", "-")
-  local started = os.date("!%Y%m%dT%H%M%SZ", tonumber(state.started) or 0)
+  -- 2 s slack: the stamp second may precede `started`
+  local started = os.date("!%Y%m%dT%H%M%SZ", (tonumber(state.started) or 0) - 2)
   local total = 0
   local out = run("ls -1 " .. q(state.dir))
   for name in out:gmatch("[^\n]+") do

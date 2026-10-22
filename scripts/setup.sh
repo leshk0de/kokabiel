@@ -185,7 +185,19 @@ configure_network() {
 	uci set "$_dev.ipv6=0"
 }
 
+# dnsmasq answers on loopback only: no DNS listener on the network.
+configure_dnsmasq() {
+	_dm='dhcp.@dnsmasq[0]'
+	uci -q get "$_dm" >/dev/null 2>&1 || return 0
+	uci set "$_dm.localuse=1"
+	uci -q delete "$_dm.interface" || true
+	uci add_list "$_dm.interface=lo"
+	uci -q delete "$_dm.notinterface" || true
+	uci add_list "$_dm.notinterface=wan"
+}
+
 configure_dhcp() {
+	configure_dnsmasq
 	uci set dhcp.lan.ignore=1
 	uci set dhcp.lan.dhcpv6=disabled
 	uci set dhcp.lan.ra=disabled

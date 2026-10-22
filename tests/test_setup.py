@@ -314,3 +314,15 @@ def test_setup_metrics_twice_is_idempotent(probe):
     n = probe.run("uci show firewall | grep -c kokabiel_metrics=").out.strip()
     assert run_setup(probe).rc == 0
     assert probe.run("uci show firewall | grep -c kokabiel_metrics=").out.strip() == n == "1"
+
+
+def test_setup_dnsmasq_loopback_only_converges(probe):
+    assert run_setup(probe).rc == 0
+    d = "dhcp.@dnsmasq[0]"
+    assert probe.uci(f"{d}.localuse") == "1"
+    assert probe.uci(f"{d}.interface") == "lo"
+    assert "wan" in probe.uci(f"{d}.notinterface").split()
+    assert probe.uci(f"{d}.domainneeded") == "1"  # rest of the section kept
+    first = probe.run("uci show dhcp.@dnsmasq[0]").out
+    assert run_setup(probe).rc == 0
+    assert probe.run("uci show dhcp.@dnsmasq[0]").out == first
