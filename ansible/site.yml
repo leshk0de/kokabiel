@@ -5,8 +5,12 @@
   roles:
     - bootstrap_python
 
+# serial: 1 so interactive prompts (passphrase rotation, SD erase) are asked
+# once per host with that host's details; a pause task otherwise prompts once
+# for the whole batch.
 - name: Configure the probe
   hosts: kokabiel
+  serial: 1
   gather_facts: false
   roles:
     - probe
