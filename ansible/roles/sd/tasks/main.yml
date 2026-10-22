@@ -13,6 +13,7 @@
   block:
     - name: Work out the sanitized log file name
       ansible.builtin.set_fact:
+        sd_serial: "{{ sd_info.serial | default('unknown', true) | string }}"
         sd_log_file: >-
           {{ playbook_dir }}/logs/{{ inventory_hostname }}-sd-{{
           (sd_info.serial | default('unknown', true) | string
@@ -29,7 +30,7 @@
 
     - name: Ask before erasing the card
       ansible.builtin.pause:
-        prompt: "Erase SD card {{ sd_info.size_mb }}MB {{ sd_info.serial | default('unknown', true) }} on {{ inventory_hostname }} and use it for captures? Type ERASE to confirm:"
+        prompt: "Erase SD card {{ sd_info.size_mb }}MB {{ sd_serial }} on {{ inventory_hostname }} and use it for captures? Type ERASE to confirm:"
       register: sd_answer
       when: erase_new_sd_card is not defined
 
