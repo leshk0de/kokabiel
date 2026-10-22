@@ -11,6 +11,8 @@ UCI = """config kokabiel 'main'
 \toption capture_mac '02:00:00:00:00:02'
 \toption mgmt_if 'eth0'
 \toption mgmt_mac '02:00:00:00:00:01'
+\toption capture_dev_path '0001:11:00.0'
+\toption mgmt_dev_path '0002:21:00.0'
 \toption capture_dir '/tmp/capdir'
 """
 # The image's BusyBox has no timeout applet and the default stub does not exec
@@ -35,11 +37,12 @@ def fixture_num(label):
     return int(re.search(rf"^{label}:?\s*(\d+)", FIXTURE, re.M).group(1))
 
 
-def setup(probe, flags="0x1103", mac1="02:00:00:00:00:01", mac2="02:00:00:00:00:02"):
+def setup(probe, flags="0x1103", mac1="02:00:00:00:00:01", mac2="02:00:00:00:00:02",
+          dev1="auto", dev2="auto"):
     probe.write("/etc/config/kokabiel", UCI)
-    probe.fake_nic("eth0", mac1)
+    probe.fake_nic("eth0", mac1, device=dev1)
     probe.fake_nic("eth1", mac2, flags=flags, rx_packets=11, rx_bytes=222,
-                   rx_dropped=3, rx_missed_errors=4, carrier_changes=5)
+                   rx_dropped=3, rx_missed_errors=4, carrier_changes=5, device=dev2)
     probe.write("/tmp/fixture.txt", FIXTURE)
     probe.stub("softflowctl", "cat /tmp/fixture.txt")
     probe.stub("timeout", TIMEOUT_STUB)
@@ -74,8 +77,18 @@ def test_collector_promisc_off(probe):
     assert collect(probe)["kokabiel_capture_promisc"] == 0
 
 
-def test_collector_guard_mismatch(probe):
+def test_collector_guard_pci_swap_with_matching_macs(probe):
+    setup(probe, dev1="0001:11:00.0", dev2="0002:21:00.0")
+    assert collect(probe)["kokabiel_interface_guard_ok"] == 0
+
+
+def test_collector_guard_ignores_mac_change(probe):
     setup(probe, mac1="02:00:00:00:00:02", mac2="02:00:00:00:00:01")
+    assert collect(probe)["kokabiel_interface_guard_ok"] == 1
+
+
+def test_collector_guard_fail_closed_when_unreadable(probe):
+    setup(probe, dev2=None)
     assert collect(probe)["kokabiel_interface_guard_ok"] == 0
 
 
@@ -154,8 +167,11 @@ def test_collector_unexpected_listeners(probe):
                "tcp        0      0 192.0.2.20:9100         0.0.0.0:*               LISTEN\n"
                "tcp        0      0 127.0.0.1:53            0.0.0.0:*               LISTEN\n"
                "tcp        0      0 :::7681                 :::*                    LISTEN\n"
+               "udp        0      0 127.0.0.1:53            0.0.0.0:*\n"
+               "udp        0      0 0.0.0.0:5353            0.0.0.0:*\n"
+               "udp        0      0 :::161                  :::*\n"
                "EOF")
-    assert collect(probe)["kokabiel_unexpected_listeners"] == 1
+    assert collect(probe)["kokabiel_unexpected_listeners"] == 3
 
 
 def test_collector_softflowd_hang_times_out(probe):
@@ -170,7 +186,7 @@ def test_collector_softflowd_hang_times_out(probe):
 
 def test_collector_guard_fail_closed_when_unrecorded(probe):
     setup(probe)
-    probe.write("/etc/config/kokabiel", UCI.replace("\toption mgmt_mac '02:00:00:00:00:01'\n", ""))
+    probe.write("/etc/config/kokabiel", UCI.replace("\toption mgmt_dev_path '0002:21:00.0'\n", ""))
     assert collect(probe)["kokabiel_interface_guard_ok"] == 0
 
 
@@ -184,3 +200,13 @@ def test_collector_capture_bytes_stamp_slack(probe):
     probe.run("head -c 100 /dev/zero > /tmp/capdir/probe-192-0-2-9-20231114T221319Z.pcap;"
               "head -c 7 /dev/zero > /tmp/capdir/probe-192-0-2-9-20231114T221317Z.pcap")
     assert collect(probe)["kokabiel_capture_bytes"] == 100
+
+
+def test_collector_dhcp_client_udp_allowed(probe):
+    setup(probe)
+    probe.stub("netstat", "cat <<'EOF'\n"
+               "tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN\n"
+               "udp        0      0 0.0.0.0:68              0.0.0.0:*\n"
+               "udp        0      0 :::546                  :::*\n"
+               "EOF")
+    assert collect(probe)["kokabiel_unexpected_listeners"] == 0

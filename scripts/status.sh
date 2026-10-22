@@ -53,29 +53,28 @@ else
 	check capture_no_address "$rc" "$cif ${addrs:-has no address}"
 fi
 
-# mac_guard: live MACs equal the ones recorded at setup.
+# nic_guard: each role's interface sits on the PCI device recorded at setup
+# (MACs are informational: FriendlyWrt pins them per interface name).
 guard=0
-detail="capture and management MACs match"
-for pair in "capture_if capture_mac" "mgmt_if mgmt_mac"; do
+detail="capture and management NICs on their recorded PCI devices"
+for pair in "capture_if capture_dev_path" "mgmt_if mgmt_dev_path"; do
 	# shellcheck disable=SC2086 # intentional word splitting
 	set -- $pair
 	ifn=$(kk_uci_get "$1") || ifn=
 	want=$(kk_uci_get "$2") || want=
 	if [ -z "$ifn" ] || [ -z "$want" ]; then
 		guard=1
-		detail="$1/$2 not recorded in uci"
+		detail="$1/$2 not recorded in uci (rerun setup.sh)"
 		break
 	fi
-	have=$(kk_mac "$ifn" 2>/dev/null) || have=
-	# shellcheck disable=SC2018,SC2019 # BusyBox tr lacks reliable [:class:] support
-	want=$(echo "$want" | tr 'A-Z' 'a-z')
+	have=$(kk_nic_path "$ifn" 2>/dev/null) || have=
 	if [ "$have" != "$want" ]; then
 		guard=1
-		detail="$ifn is ${have:-unreadable}, expected $want"
+		detail="$ifn is PCI device ${have:-unreadable}, expected $want (NICs swapped? if the hardware changed on purpose, rerun setup.sh --rerecord-nics)"
 		break
 	fi
 done
-check mac_guard "$guard" "$detail"
+check nic_guard "$guard" "$detail"
 
 if [ -f "$KK_SHIM" ]; then ok flows_shim "$KK_SHIM"; else fail flows_shim "missing $KK_SHIM (softflowd processes no packets without it)"; fi
 
@@ -83,17 +82,23 @@ stats=$(timeout "${KOKABIEL_CTL_TIMEOUT:-5}" "$SOFTFLOWCTL" -c "$CTL" statistics
 src=$?
 check softflowd_running "$src" "control socket $CTL"
 
-# listeners: non-loopback TCP listeners must be a subset of {22, 9100}.
-bad=$(netstat -tln 2>/dev/null | awk '
-	$1 ~ /^tcp/ && $4 != "" {
+# listeners: non-loopback TCP listeners must be a subset of {22, 9100}; no
+# non-loopback UDP listeners except the DHCP clients (68, 546) the
+# management interface needs.
+# shellcheck disable=SC2016 # awk program, not shell
+LISTEN_AWK='
+	$1 ~ ("^" proto) && $4 != "" {
 		n = split($4, a, ":"); port = a[n]
 		host = substr($4, 1, length($4) - length(port) - 1)
 		if (host ~ /^127\./ || host == "::1" || host == "[::1]") next
-		if (port == "22" || port == "9100") next
-		printf "%s%s", sep, port; sep = ","
-	}')
+		if (index(" " allowed " ", " " port " ")) next
+		printf "%s%s/%s", sep, proto, port; sep = ","
+	}'
+bad_tcp=$(netstat -tln 2>/dev/null | awk -v proto=tcp -v allowed="22 9100" "$LISTEN_AWK")
+bad_udp=$(netstat -uln 2>/dev/null | awk -v proto=udp -v allowed="68 546" "$LISTEN_AWK")
+bad=$bad_tcp${bad_tcp:+${bad_udp:+,}}$bad_udp
 if [ -z "$bad" ]; then
-	ok listeners "only 22 and 9100 on non-loopback addresses"
+	ok listeners "only tcp 22 and 9100 (and DHCP client udp 68/546) on non-loopback addresses"
 else
 	fail listeners "unexpected ports $bad"
 fi

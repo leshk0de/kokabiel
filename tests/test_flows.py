@@ -1,3 +1,5 @@
+import pytest
+
 LIB = ". /work/scripts/lib/common.sh; . /work/scripts/lib/flows.sh"
 INIT = "/work/scripts/files/init.d/kokabiel-flows"
 SETUP = "/work/scripts/setup.sh"
@@ -36,7 +38,8 @@ def test_flows_cmdline_v9(probe):
 
 def test_flows_init_has_respawn(probe):
     src = probe.read(INIT)
-    assert "procd_set_param respawn" in src
+    # unlimited retries: softflowd may boot before the collector is routable
+    assert "procd_set_param respawn 3600 5 0" in src
     assert "START=60" in src
     assert "USE_PROCD=1" in src
     assert "flows.sh" in src and "kk_flows_cmdline" in src
@@ -66,3 +69,50 @@ def test_setup_installs_softflowd_and_ethtool(probe):
     assert r.rc == 0, r.err
     assert any(c.startswith("apk add") and "softflowd" in c and "ethtool" in c
                for c in probe.calls("apk"))
+
+
+@pytest.mark.parametrize("content,rc", [("ok", 0), ("fail", 1), (None, 1), ("okay", 1)])
+def test_flows_guard_ok(probe, content, rc):
+    probe.run("mkdir -p /tmp/run")
+    if content is not None:
+        probe.write("/tmp/run/kokabiel-guard", content + "\n")
+    r = probe.run(f"{LIB}; kk_flows_guard_ok", env={"KOKABIEL_RUN": "/tmp/run"})
+    assert r.rc == rc
+
+
+PROCD = (
+    'procd_open_instance() { echo "procd_open_instance" >> /tmp/stubs.log; }; '
+    'procd_set_param() { echo "procd_set_param $*" >> /tmp/stubs.log; }; '
+    'procd_close_instance() { echo "procd_close_instance" >> /tmp/stubs.log; }; '
+)
+
+
+def start_flows(probe):
+    seed(probe)
+    probe.run("mkdir -p /tmp/run")
+    return probe.run(f"{PROCD} . {INIT}; start_service",
+                     env={"KOKABIEL_LIBEXEC": "/work/scripts/lib", "KOKABIEL_RUN": "/tmp/run"})
+
+
+def test_flows_start_refused_without_guard_ok(probe):
+    r = start_flows(probe)
+    assert r.rc != 0
+    assert not probe.calls("procd_open_instance")
+    assert [c for c in probe.calls("logger") if "daemon.err" in c and "guard" in c], probe.calls()
+
+
+def test_flows_start_refused_when_guard_failed(probe):
+    probe.write("/tmp/run/kokabiel-guard", "fail\n")
+    r = start_flows(probe)
+    assert r.rc != 0
+    assert not probe.calls("procd_open_instance")
+
+
+def test_flows_start_when_guard_ok(probe):
+    probe.write("/tmp/run/kokabiel-guard", "ok\n")
+    r = start_flows(probe)
+    assert r.rc == 0, r.err
+    calls = probe.calls()
+    assert "procd_open_instance" in calls
+    assert "procd_set_param respawn 3600 5 0" in calls
+    assert any(c.startswith("procd_set_param command softflowd -d -i eth1") for c in calls)

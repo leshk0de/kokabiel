@@ -7,11 +7,12 @@ DEFAULT_DISABLE = (
 ).split()
 
 
-def run_setup(probe, site="COLLECTOR_HOST=192.0.2.10\n", env=None):
+def run_setup(probe, site="COLLECTOR_HOST=192.0.2.10\n", env=None, args="",
+              eth0_dev="auto", eth1_dev="auto"):
     probe.write("/tmp/site.env", site)
-    probe.fake_nic("eth0", "02:00:00:00:00:01")
-    probe.fake_nic("eth1", "02:00:00:00:00:02")
-    return probe.run(f"{SETUP} --env /tmp/site.env --skip-packages",
+    probe.fake_nic("eth0", "02:00:00:00:00:01", device=eth0_dev)
+    probe.fake_nic("eth1", "02:00:00:00:00:02", device=eth1_dev)
+    return probe.run(f"{SETUP} --env /tmp/site.env --skip-packages {args}",
                      env={**ENV, **(env or {})})
 
 
@@ -93,6 +94,8 @@ def test_setup_records_macs_and_options(probe):
     assert run_setup(probe, "COLLECTOR_HOST=192.0.2.10\nPROBE_NAME=probe-a\n").rc == 0
     assert probe.uci("kokabiel.main.capture_mac") == "02:00:00:00:00:02"
     assert probe.uci("kokabiel.main.mgmt_mac") == "02:00:00:00:00:01"
+    assert probe.uci("kokabiel.main.capture_dev_path") == "0001:11:00.0"
+    assert probe.uci("kokabiel.main.mgmt_dev_path") == "0002:21:00.0"
     assert probe.uci("kokabiel.main.capture_if") == "eth1"
     assert probe.uci("kokabiel.main.mgmt_if") == "eth0"
     assert probe.uci("kokabiel.main.collector_host") == "192.0.2.10"
@@ -372,3 +375,31 @@ def test_setup_installs_coreutils_timeout_when_missing(probe):
     assert probe.run("command -v timeout").rc != 0
     adds = run_setup_with_packages(probe)
     assert [c for c in adds if "coreutils-timeout" in c.split()], adds
+
+
+SWAPPED = {"eth0_dev": "0001:11:00.0", "eth1_dev": "0002:21:00.0"}
+
+
+def test_setup_keeps_recorded_nic_paths(probe):
+    assert run_setup(probe).rc == 0
+    r = run_setup(probe, **SWAPPED)
+    assert r.rc == 0, r.err
+    assert probe.uci("kokabiel.main.capture_dev_path") == "0001:11:00.0"
+    assert probe.uci("kokabiel.main.mgmt_dev_path") == "0002:21:00.0"
+    assert "--rerecord-nics" in r.err
+
+
+def test_setup_rerecord_nics(probe):
+    assert run_setup(probe).rc == 0
+    r = run_setup(probe, args="--rerecord-nics", **SWAPPED)
+    assert r.rc == 0, r.err
+    assert probe.uci("kokabiel.main.capture_dev_path") == "0002:21:00.0"
+    assert probe.uci("kokabiel.main.mgmt_dev_path") == "0001:11:00.0"
+
+
+def test_setup_refuses_unreadable_pci_path(probe):
+    before = snapshot(probe)
+    r = run_setup(probe, eth1_dev=None)
+    assert r.rc == 3
+    assert "eth1" in r.err and "PCI" in r.err
+    assert snapshot(probe) == before

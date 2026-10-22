@@ -1,5 +1,6 @@
 #!/bin/sh /etc/rc.common
 # Kokabiel: softflowd flow exporter under procd (respawned if it dies).
+# Starts only after capture-prep's NIC guard passed (it restarts this service).
 # shellcheck disable=SC2034 # START/USE_PROCD are read by rc.common
 START=60
 USE_PROCD=1
@@ -10,12 +11,18 @@ start_service() {
 	. "$_lib/common.sh"
 	# shellcheck disable=SC1091
 	. "$_lib/flows.sh"
+	if ! kk_flows_guard_ok; then
+		logger -t kokabiel -p daemon.err \
+			"not starting softflowd: NIC guard not passed ($(kk_flows_guard_file) is not ok); see kokabiel-status"
+		return 1
+	fi
 	_cmd=$(kk_flows_cmdline) || return 1
 	procd_open_instance
 	# shellcheck disable=SC2086 # argv is space-separated by construction
 	procd_set_param command $_cmd
 	[ -f "$KK_SHIM" ] && procd_set_param env LD_PRELOAD="$KK_SHIM"
-	procd_set_param respawn
+	# Never give up: at boot softflowd may start before the collector is routable.
+	procd_set_param respawn 3600 5 0
 	procd_set_param stdout 1
 	procd_set_param stderr 1
 	procd_close_instance

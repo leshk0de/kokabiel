@@ -1,6 +1,9 @@
 #!/bin/sh
 # Kokabiel probe setup: network, firewall, services, persistence. Idempotent.
-# Usage: setup.sh [--env FILE] [--skip-packages]
+# Usage: setup.sh [--env FILE] [--skip-packages] [--rerecord-nics]
+#   --rerecord-nics  re-record which PCI device is the capture and which the
+#                    management NIC (only after a deliberate hardware or
+#                    CAPTURE_IF/MGMT_IF change; otherwise the first recording stays).
 # Exit codes: 0 ok, 3 config/usage, 4 lock-out guard.
 #
 # Test hooks: KOKABIEL_INSTALL_ROOT prefixes every installed file (not /etc/config).
@@ -50,6 +53,28 @@ guard_lockout() {
 			done
 		fi
 	fi
+}
+
+# resolve_nic_paths: the PCI device paths that identify the NIC roles (Ruling R22:
+# MACs follow interface names on FriendlyWrt, PCI paths follow the physical port).
+# Recorded once; kept on rerun unless --rerecord-nics, so a boot-time name swap is
+# caught by the guard instead of being re-recorded as the new truth.
+resolve_nic_paths() {
+	CAPTURE_DEV_PATH=$(kk_uci_get capture_dev_path) || CAPTURE_DEV_PATH=
+	MGMT_DEV_PATH=$(kk_uci_get mgmt_dev_path) || MGMT_DEV_PATH=
+	if [ "$RERECORD_NICS" = 1 ] || [ -z "$CAPTURE_DEV_PATH" ] || [ -z "$MGMT_DEV_PATH" ]; then
+		CAPTURE_DEV_PATH=$(kk_nic_path "$CAPTURE_IF") ||
+			kk_die "cannot read the PCI device path of $CAPTURE_IF ($(kk_sysfs "class/net/$CAPTURE_IF/device"))"
+		MGMT_DEV_PATH=$(kk_nic_path "$MGMT_IF") ||
+			kk_die "cannot read the PCI device path of $MGMT_IF ($(kk_sysfs "class/net/$MGMT_IF/device"))"
+		return 0
+	fi
+	for _r in "$CAPTURE_IF $CAPTURE_DEV_PATH" "$MGMT_IF $MGMT_DEV_PATH"; do
+		# shellcheck disable=SC2086 # intentional word splitting
+		set -- $_r
+		[ "$(kk_nic_path "$1" 2>/dev/null)" = "$2" ] ||
+			kk_log "WARNING: $1 is not on recorded PCI device $2; the NIC guard will refuse to capture. If the hardware or interface roles changed on purpose, rerun with --rerecord-nics"
+	done
 }
 
 install_packages() {
@@ -142,8 +167,11 @@ write_kokabiel_config() {
 	uci set kokabiel.main.collector_port="$COLLECTOR_PORT"
 	uci set kokabiel.main.export_version="$EXPORT_VERSION"
 	uci set kokabiel.main.capture_if="$CAPTURE_IF"
-	uci set kokabiel.main.capture_mac="$(kk_mac "$CAPTURE_IF")"
+	uci set kokabiel.main.capture_dev_path="$CAPTURE_DEV_PATH"
 	uci set kokabiel.main.mgmt_if="$MGMT_IF"
+	uci set kokabiel.main.mgmt_dev_path="$MGMT_DEV_PATH"
+	# MACs are informational only (FriendlyWrt pins them per interface name).
+	uci set kokabiel.main.capture_mac="$(kk_mac "$CAPTURE_IF")"
 	uci set kokabiel.main.mgmt_mac="$(kk_mac "$MGMT_IF")"
 	uci_set_opt kokabiel.main.probe_name "$PROBE_NAME"
 	uci set kokabiel.main.capture_dir="$CAPTURE_DIR"
@@ -329,18 +357,21 @@ apply() {
 	kk_svc prometheus-node-exporter-lua enable
 	kk_svc prometheus-node-exporter-lua restart
 	[ "$ENABLE_LUCI" = 1 ] && kk_svc uhttpd restart
-	kk_svc kokabiel enable
-	kk_svc kokabiel start
 	# Kokabiel runs softflowd itself; the packaged service must not.
 	kk_svc softflowd stop
 	kk_svc softflowd disable
+	# Enable flows first: capture-prep (kokabiel start) restarts it once the NIC
+	# guard passes, and kokabiel-flows refuses to start until then.
 	kk_svc kokabiel-flows enable
+	kk_svc kokabiel enable
+	kk_svc kokabiel start
 	kk_svc kokabiel-flows restart
 }
 
 main() {
 	ENV_FILE=
 	SKIP_PACKAGES=0
+	RERECORD_NICS=0
 	KK_CHANGED=0
 	while [ $# -gt 0 ]; do
 		case $1 in
@@ -353,12 +384,17 @@ main() {
 			SKIP_PACKAGES=1
 			shift
 			;;
-		*) kk_die "usage: setup.sh [--env FILE] [--skip-packages]" ;;
+		--rerecord-nics)
+			RERECORD_NICS=1
+			shift
+			;;
+		*) kk_die "usage: setup.sh [--env FILE] [--skip-packages] [--rerecord-nics]" ;;
 		esac
 	done
 
 	kk_load_config ${ENV_FILE:+"$ENV_FILE"}
 	guard_lockout
+	resolve_nic_paths
 	install_packages
 	install_files
 	write_kokabiel_config

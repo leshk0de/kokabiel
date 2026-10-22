@@ -116,10 +116,26 @@ spec:
           labels: { severity: critical }
           annotations:
             summary: "Probe {{ $labels.probe }} exporter is not scraping"
+        - alert: KokabielSoftflowdDown
+          expr: kokabiel_softflowd_up == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "Probe {{ $labels.probe }} softflowd is not running (or the NIC guard holds it stopped)"
+        # The second arm fires when the counter is absent (softflowd down) on a
+        # probe whose link is up; `unless on (probe)` keeps it per probe, which
+        # absent() would not.
         - alert: KokabielNoFlowsExported
           expr: |
-            rate(kokabiel_softflowd_flows_exported_total[10m]) == 0
-            and on (probe) kokabiel_capture_link_up == 1
+            (
+              rate(kokabiel_softflowd_flows_exported_total[10m]) == 0
+              and on (probe) kokabiel_capture_link_up == 1
+            )
+            or
+            (
+              kokabiel_capture_link_up == 1
+              unless on (probe) kokabiel_softflowd_flows_exported_total
+            )
           for: 10m
           labels: { severity: warning }
           annotations:
@@ -144,7 +160,7 @@ spec:
           for: 1m
           labels: { severity: critical }
           annotations:
-            summary: "Probe {{ $labels.probe }}: capture/management MAC differs from the recorded one"
+            summary: "Probe {{ $labels.probe }}: capture/management NIC is not on its recorded PCI device (swapped?); softflowd is held stopped"
         - alert: KokabielSdCardNearlyFull
           expr: |
             kokabiel_storage_free_bytes{mount="sd"}
@@ -177,7 +193,7 @@ Counters reset when the exporter or interface restarts, so use `rate()` or `incr
 | `kokabiel_capture_rx_bytes_total` | counter | | Bytes received on the capture interface. |
 | `kokabiel_capture_rx_dropped_total` | counter | | Packets dropped by the NIC driver or kernel. |
 | `kokabiel_capture_rx_missed_errors_total` | counter | | Packets missed by the NIC (ring buffer overrun). |
-| `kokabiel_interface_guard_ok` | gauge | | 1 if both capture and management MACs match the recorded values; 0 on mismatch or when unrecorded (fails closed). |
+| `kokabiel_interface_guard_ok` | gauge | | 1 if the capture and management interfaces sit on the PCI device paths recorded at setup (`capture_dev_path`, `mgmt_dev_path`); 0 on mismatch, or when unrecorded or unreadable (fails closed). MACs are not compared: FriendlyWrt pins them per interface name. |
 | `kokabiel_softflowd_up` | gauge | | 1 if `softflowctl statistics` answered. The other softflowd metrics are absent when 0. |
 | `kokabiel_softflowd_active_flows` | gauge | | Flows currently tracked. |
 | `kokabiel_softflowd_flows_exported_total` | counter | | Flows exported to the collector. |
@@ -191,7 +207,7 @@ Counters reset when the exporter or interface restarts, so use `rate()` or `incr
 | `kokabiel_capture_running` | gauge | | 1 while a `capture.sh` run is in progress. |
 | `kokabiel_capture_bytes` | gauge | | Bytes written by the current capture run; 0 when none is running. |
 | `kokabiel_capture_info` | gauge | `target` | Always 1 while a capture runs; the label names its target. |
-| `kokabiel_unexpected_listeners` | gauge | | TCP listeners on non-loopback addresses other than 22 and 9100. Should be 0. |
+| `kokabiel_unexpected_listeners` | gauge | | Non-loopback listeners other than TCP 22 and 9100 and the UDP DHCP clients (68, 546). Should be 0. |
 
 Standard `node_*` metrics from the exporter (`node_cpu_seconds_total`, `node_memory_*_bytes`,
 `node_load1/5/15`, `node_network_*`, `node_time_seconds`, `node_uname_info`) are also available.

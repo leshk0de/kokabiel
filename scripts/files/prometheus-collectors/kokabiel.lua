@@ -57,7 +57,14 @@ local function uci(opt)
   return out
 end
 
-local function lower(s) return s and s:lower() or nil end
+-- PCI device path of IFACE (e.g. 0001:11:00.0), or nil if unreadable.
+local function nic_path(ifn)
+  local out, rc = run("readlink " .. q(SYSFS .. "/class/net/" .. ifn .. "/device"))
+  if rc ~= 0 then return nil end
+  local p = out:gsub("%s+$", ""):gsub("/+$", ""):match("([^/]+)$")
+  if p == nil or p == "" then return nil end
+  return p
+end
 
 -- Total and free bytes of the filesystem holding PATH (df -Pk), or nil.
 local function df(path)
@@ -100,12 +107,13 @@ local function capture_interface()
   metric("kokabiel_capture_rx_missed_errors_total", "counter", nil,
     read_num(base .. "/statistics/rx_missed_errors"))
 
+  -- NIC roles are identified by PCI device path (basename of the sysfs `device`
+  -- link), recorded at setup; MACs follow interface names on FriendlyWrt.
   local ok = 1
-  for _, pair in ipairs({ { "capture_if", "capture_mac" }, { "mgmt_if", "mgmt_mac" } }) do
-    local ifn, want = uci(pair[1]), lower(uci(pair[2]))
+  for _, pair in ipairs({ { "capture_if", "capture_dev_path" }, { "mgmt_if", "mgmt_dev_path" } }) do
+    local ifn, want = uci(pair[1]), uci(pair[2])
     -- fail closed: unrecorded or unreadable counts as a mismatch
-    if not (ifn and want)
-        or lower(read_trim(SYSFS .. "/class/net/" .. ifn .. "/address")) ~= want then
+    if not (ifn and want) or nic_path(ifn) ~= want then
       ok = 0
     end
   end
@@ -203,17 +211,22 @@ local function capture_job()
   metric("kokabiel_capture_info", "gauge", { target = (state.target:gsub('[^%w:%.]', "_")) }, 1)
 end
 
--- TCP listeners on non-loopback addresses other than 22 and 9100.
+-- Non-loopback listeners outside the allowed set: TCP 22 and 9100; UDP only the
+-- DHCP clients (68, 546) the management interface needs.
+local ALLOWED = { tcp = { ["22"] = true, ["9100"] = true }, udp = { ["68"] = true, ["546"] = true } }
+
 local function listeners()
-  local out = run("netstat -tln")
   local n = 0
-  for line in out:gmatch("[^\n]+") do
-    local f = space_split(line)
-    if f[1] and f[1]:match("^tcp") and f[4] then
-      local host, port = f[4]:match("^(.*):(%d+)$")
-      if host and not host:match("^127%.") and host ~= "::1" and host ~= "[::1]"
-          and port ~= "22" and port ~= "9100" then
-        n = n + 1
+  for _, proto in ipairs({ "tcp", "udp" }) do
+    local out = run("netstat -" .. proto:sub(1, 1) .. "ln")
+    for line in out:gmatch("[^\n]+") do
+      local f = space_split(line)
+      if f[1] and f[1]:sub(1, #proto) == proto and f[4] then
+        local host, port = f[4]:match("^(.*):(%d+)$")
+        if host and not host:match("^127%.") and host ~= "::1" and host ~= "[::1]"
+            and not ALLOWED[proto][port] then
+          n = n + 1
+        end
       end
     end
   end

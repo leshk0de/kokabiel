@@ -25,6 +25,9 @@ INIT_SERVICES = (
     "softflowd kokabiel kokabiel-flows prometheus-node-exporter-lua"
 ).split()
 
+# PCI device paths of the R5C's NICs (sysfs class/net/<if>/device link targets).
+PCI = {"eth0": "0002:21:00.0", "eth1": "0001:11:00.0"}
+
 ENV = {
     "KOKABIEL_SYSFS": "/tmp/sys",
     "KOKABIEL_INITD": "/tmp/initd",
@@ -126,8 +129,13 @@ class Probe:
         return self._sh(f"uci -q get {expr} || true").strip()
 
     def fake_nic(self, name, mac, carrier=1, flags="0x1003", rx_dropped=0,
-                 rx_missed_errors=0, carrier_changes=0, rx_packets=0, rx_bytes=0):
+                 rx_missed_errors=0, carrier_changes=0, rx_packets=0, rx_bytes=0,
+                 device="auto"):
+        """Fake /sys/class/net/NAME. device: PCI path the `device` symlink points at
+        ("auto" = PCI[name] if known, None = no link)."""
         base = f"/tmp/sys/class/net/{name}"
+        if device == "auto":
+            device = PCI.get(name)
         files = {
             "address": mac, "carrier": carrier, "flags": flags,
             "carrier_changes": carrier_changes,
@@ -138,6 +146,11 @@ class Probe:
         }
         cmds = [f"mkdir -p {base}/statistics"]
         cmds += [f"echo {shlex.quote(str(v))} > {base}/{k}" for k, v in files.items()]
+        cmds.append(f"rm -f {base}/device")
+        if device:
+            d = shlex.quote(device)
+            cmds.append(f"mkdir -p /tmp/sys/devices/pci/{d}")
+            cmds.append(f"ln -s ../../../devices/pci/{d} {base}/device")
         self._sh("\n".join(cmds))
 
     def fake_mmc(self, name, type, size_sectors, serial="0x00000001", partitions=()):

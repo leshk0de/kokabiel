@@ -1,42 +1,54 @@
 #!/bin/sh
 # Kokabiel: prepare the capture interface after verifying the NICs are the
-# ones configured (guards against eth0/eth1 swapping on reboot).
-# Exit codes: 0 prepared, 10 MAC guard refused, 3 no config.
+# ones configured (guards against eth0/eth1 swapping on reboot). Roles are
+# identified by PCI device path, recorded by setup.sh (see --rerecord-nics).
+# Writes ok/fail to ${KOKABIEL_RUN:-/var/run}/kokabiel-guard; kokabiel-flows
+# starts only on ok, and is (re)started here on success if it is enabled.
+# Exit codes: 0 prepared, 10 NIC guard refused, 3 no config, 1 link failure.
 
 KK_LIB=${KOKABIEL_LIB:-$(dirname "$0")/../lib}
 [ -d "$KK_LIB" ] || KK_LIB=$(dirname "$0")
 [ -f "$KK_LIB/common.sh" ] || KK_LIB=/usr/libexec/kokabiel
 # shellcheck disable=SC1091 # located at runtime
 . "$KK_LIB/common.sh"
+# shellcheck disable=SC1091
+. "$KK_LIB/flows.sh"
+
+GUARD_FILE=$(kk_flows_guard_file)
+mkdir -p "$(dirname "$GUARD_FILE")"
+echo fail >"$GUARD_FILE"
 
 CAPTURE_IF=$(kk_uci_get capture_if)
-CAPTURE_MAC=$(kk_uci_get capture_mac)
+CAPTURE_PATH=$(kk_uci_get capture_dev_path)
 MGMT_IF=$(kk_uci_get mgmt_if)
-MGMT_MAC=$(kk_uci_get mgmt_mac)
+MGMT_PATH=$(kk_uci_get mgmt_dev_path)
 [ -n "$CAPTURE_IF" ] || kk_die "no kokabiel config (capture_if unset)" 3
 
-lower() {
-	# shellcheck disable=SC2018,SC2019
-	echo "$1" | tr 'A-Z' 'a-z'
-}
-
 guard_fail() {
-	kk_log "MAC guard failed: $1"
+	kk_log "NIC guard failed: $1 (if the hardware changed on purpose, rerun setup.sh --rerecord-nics)"
 	kk_svc kokabiel-flows stop
 	exit 10
 }
 
-# Every configured (interface, MAC) pair must match what sysfs reports.
-check_mac() {
-	[ -n "$1" ] && [ -n "$2" ] || return 0
-	_have=$(kk_mac "$1" 2>/dev/null) || guard_fail "$1 not found"
-	[ "$_have" = "$(lower "$2")" ] || guard_fail "$1 has MAC $_have, expected $(lower "$2")"
+# check_nic ROLE IFACE PATH: IFACE must sit on the recorded PCI device path.
+check_nic() {
+	[ -n "$2" ] && [ -n "$3" ] || guard_fail "$1 identity not recorded"
+	_have=$(kk_nic_path "$2") || guard_fail "$2 ($1) not found or has no PCI device"
+	[ "$_have" = "$3" ] || guard_fail "$2 ($1) is PCI device $_have, expected $3 (NICs swapped?)"
 }
 
-[ -n "$CAPTURE_MAC" ] || guard_fail "capture_mac not configured"
-check_mac "$CAPTURE_IF" "$CAPTURE_MAC"
-[ -n "$MGMT_IF" ] && [ -n "$MGMT_MAC" ] || guard_fail "management identity not recorded"
-check_mac "$MGMT_IF" "$MGMT_MAC"
+check_nic capture "$CAPTURE_IF" "$CAPTURE_PATH"
+[ -n "$MGMT_IF" ] && [ -n "$MGMT_PATH" ] || guard_fail "management identity not recorded"
+check_nic management "$MGMT_IF" "$MGMT_PATH"
+
+# Silence the port before it comes up: no IPv6 (link-local, RS/DAD), no ARP replies
+# (arp_ignore=8: never reply) and no announcements from our addresses.
+sysctl -w "net.ipv6.conf.$CAPTURE_IF.disable_ipv6=1" >/dev/null 2>&1 ||
+	kk_log "could not disable IPv6 on $CAPTURE_IF"
+sysctl -w "net.ipv4.conf.$CAPTURE_IF.arp_ignore=8" >/dev/null 2>&1 ||
+	kk_log "could not set arp_ignore on $CAPTURE_IF"
+sysctl -w "net.ipv4.conf.$CAPTURE_IF.arp_announce=2" >/dev/null 2>&1 ||
+	kk_log "could not set arp_announce on $CAPTURE_IF"
 
 ip link set dev "$CAPTURE_IF" up promisc on || kk_die "cannot bring up $CAPTURE_IF" 1
 
@@ -52,6 +64,8 @@ case $_rx in
 *) ethtool -G "$CAPTURE_IF" rx "$_rx" >/dev/null 2>&1 || kk_log "ethtool -G rx $_rx failed" ;;
 esac
 
-sysctl -w "net.ipv6.conf.$CAPTURE_IF.disable_ipv6=1" >/dev/null 2>&1 ||
-	kk_log "could not disable IPv6 on $CAPTURE_IF"
+echo ok >"$GUARD_FILE"
+if kk_svc kokabiel-flows enabled; then
+	kk_svc kokabiel-flows restart || kk_log "could not restart kokabiel-flows"
+fi
 exit 0

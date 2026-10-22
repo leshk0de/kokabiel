@@ -234,3 +234,13 @@ kk_mac() {
 	# shellcheck disable=SC2018,SC2019 # BusyBox tr lacks reliable [:class:] support
 	tr 'A-Z' 'a-z' <"$(kk_sysfs "class/net/$1/address")"
 }
+
+# kk_nic_path IFACE: PCI device path of IFACE (basename of the sysfs `device`
+# link, e.g. 0001:11:00.0). Follows the physical port, unlike the name or the
+# MAC (FriendlyWrt pins a MAC per interface name). rc 1 if unreadable.
+kk_nic_path() {
+	_kk_l=$(readlink "$(kk_sysfs "class/net/$1/device")" 2>/dev/null) || return 1
+	_kk_l=${_kk_l%/}
+	[ -n "$_kk_l" ] || return 1
+	echo "${_kk_l##*/}"
+}

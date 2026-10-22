@@ -21,3 +21,14 @@ kk_flows_cmdline() {
 		"-t maxlife=300 -t tcp.rst=10 -t tcp.fin=10 -t udp=60 -t icmp=30 -t general=60" \
 		"-c /var/run/kokabiel-softflowd.ctl"
 }
+
+# kk_flows_guard_file: state written by capture-prep ("ok" or "fail").
+# Test hook: KOKABIEL_RUN overrides /var/run.
+kk_flows_guard_file() {
+	echo "${KOKABIEL_RUN:-/var/run}/kokabiel-guard"
+}
+
+# kk_flows_guard_ok: true only if capture-prep's NIC guard passed this boot.
+kk_flows_guard_ok() {
+	[ "$(cat "$(kk_flows_guard_file)" 2>/dev/null)" = ok ]
+}

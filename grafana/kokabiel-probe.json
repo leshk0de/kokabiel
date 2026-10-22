@@ -281,7 +281,7 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "MAC guard OK",
+      "title": "NIC guard OK",
       "description": "0 means the capture or management interface MAC differs from the recorded one (fails closed).",
       "datasource": {
         "type": "prometheus",
