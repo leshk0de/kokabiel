@@ -52,8 +52,8 @@ guard_lockout() {
 
 install_packages() {
 	[ "$SKIP_PACKAGES" = 1 ] && return 0
-	# Package list is extended by later tasks (softflowd, exporter, ...).
-	return 0
+	# Package list is extended by later tasks (exporter, ...).
+	kk_pkg_install softflowd ethtool
 }
 
 # install_file SRC DST MODE: copy only when content differs.
@@ -73,10 +73,11 @@ install_files() {
 	done
 	install_file "$SCRIPT_DIR/files/capture-prep" "$LIBEXEC/capture-prep" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel" "$ROOT/etc/init.d/kokabiel" 0755
+	install_file "$SCRIPT_DIR/files/init.d/kokabiel-flows" "$ROOT/etc/init.d/kokabiel-flows" 0755
 	install_file "$SCRIPT_DIR/files/hotplug/30-kokabiel" "$ROOT/etc/hotplug.d/iface/30-kokabiel" 0644
 	# Keep the installed files across sysupgrade.
 	mkdir -p "$ROOT/etc"
-	for _p in /usr/libexec/kokabiel/ /etc/init.d/kokabiel /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/; do
+	for _p in /usr/libexec/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/; do
 		grep -qxF "$_p" "$ROOT/etc/sysupgrade.conf" 2>/dev/null ||
 			echo "$_p" >>"$ROOT/etc/sysupgrade.conf"
 	done
@@ -215,6 +216,11 @@ apply() {
 	[ "$ENABLE_LUCI" = 1 ] && kk_svc uhttpd restart
 	kk_svc kokabiel enable
 	kk_svc kokabiel start
+	# Kokabiel runs softflowd itself; the packaged service must not.
+	kk_svc softflowd stop
+	kk_svc softflowd disable
+	kk_svc kokabiel-flows enable
+	kk_svc kokabiel-flows restart
 }
 
 main() {

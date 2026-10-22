@@ -1,0 +1,11 @@
+softflowd[15]: Accumulated statistics since 2026-10-22T07:53:47 UTC:
+Number of active flows: 0
+Packets processed: 0
+Fragments: 0
+Ignored packets: 0 (0 non-IP, 0 too short)
+Flows expired: 0 (0 forced)
+Flows exported: 0 (0 records) in 0 packets (0 failures)
+Packets received by libpcap: 90
+Packets dropped by libpcap: 0
+Packets dropped by interface: 0
+

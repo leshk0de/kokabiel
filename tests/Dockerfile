@@ -6,3 +6,5 @@
 # manifest list labels it platform "aarch64_generic", which Docker cannot
 # resolve, so a plain pull fails. Pinning the platform manifest by digest works.
 FROM openwrt/rootfs@sha256:fedf8ac03f89452ef13585c586dd6a13bcc4d9fc9fc8d0103674da9f5f1380e9
+
+RUN apk update && apk add softflowd
