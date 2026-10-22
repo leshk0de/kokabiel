@@ -1,8 +1,8 @@
 # Collector notes
 
 Kokabiel does not deploy or configure your collector, Vector, an index or dashboards. These notes
-cover what the collector side needs to know. Example queries are generic and assume a
-Quickwit/Elasticsearch-style index.
+cover what the collector side needs to know. Example queries are pseudo-SQL for a
+Quickwit/Elasticsearch-style index: translate them to your engine.
 
 ## Pointing the probe at a collector
 
@@ -44,6 +44,8 @@ Also note the gateway's flows are sampled (minimum 1:2) while the probe's are no
 counts between them directly.
 
 ## Example queries
+
+These are pseudo-SQL sketches. Translate them to your query engine and schema.
 
 Field names follow goflow2 (`src_addr`, `dst_addr`, `dst_port`, `proto`, `tcp_flags`, `packets`,
 `bytes`, `time_flow_start_ns`). Adjust to your schema. Always restrict to the probe with

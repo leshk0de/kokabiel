@@ -15,8 +15,9 @@ author's hardware unless marked otherwise; they are not vendor-documented.
   `pcap_dropped` lines in `status.sh`.
 - Mirror an AP uplink, or the uplink of the segment you care about. Do not overlap sources
   (double counting).
-- Client isolation is enforced inside the AP. Probes it blocks never reach any wire, so the mirror
-  never sees them (Wi-Fi to Wi-Fi, and, in the author's experience, Wi-Fi to wired on the same subnet).
+- Client isolation is enforced inside the AP. Packets it blocks never reach any wire, so the mirror
+  never sees them (Wi-Fi to Wi-Fi, and, as observed in the author's experience and not vendor-documented,
+  Wi-Fi to wired on the same subnet).
 
 ## Reading `switch_caps` through the API
 
@@ -55,10 +56,13 @@ Time-box it.
 3. Confirm that port is in the destination's mirror group.
 4. In Port Manager, re-point the mirror's source to that port. The probe needs no changes; it exports
    whatever it receives.
-5. Investigate, filtering by the device's IP at query time. For packets, run
-   `kokabiel-capture <host-or-mac> [seconds]` on the probe (see the README).
+5. Investigate, filtering by the device's IP at query time. For packets, either run on the probe
+   `kokabiel-capture <ip-or-mac> [seconds]` (writes a pcap to the SD card if mounted, else to RAM, and
+   prints a JSON summary), or from the operator machine
+   `ansible-playbook ansible/capture.yml -l <probe> -e target=<ip-or-mac> -e seconds=60`
+   (fetches the pcap locally).
 6. **Restore the original source port.** Verify with `status.sh` that the capture counters climb
    again and flows return to the baseline pattern.
 
 For a Wi-Fi device there is no per-client port. Stay in survey mode, filter by the device's IP in the
-collector, and use the capture helper if you need full packets.
+collector, and use the capture tools above if you need full packets.

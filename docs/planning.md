@@ -5,6 +5,45 @@ This guide is for readers who do not yet know their own network well. It assumes
 section covers other gear. For the mechanics of the mirror itself, see
 [unifi-mirror.md](unifi-mirror.md).
 
+## Visibility model
+
+A generic reference topology (yours will differ):
+
+```
+                 Internet
+                    |
+               +----+----+   sampled IPFIX (min 1:2) ------------+
+               | Gateway |                                       |
+               +----+----+                                       |
+                    | (A) gateway uplink                         |
+          +---------+----------+        mirror session           |
+          |    Core switch     |--(dest)--> probe capture port   |
+          +--+----------+------+            probe mgmt --IPFIX---+
+   (B) AP    |          | (C) inter-switch                       v
+   uplink(s) |          |     uplink                      Flow collector
+        +----+--+   +---+----------+
+        |  APs  |   | Server switch|-- servers
+        +---+---+   +--------------+
+        Wi-Fi clients (some SSIDs isolated)
+```
+
+| Vantage point | Sees | Blind to |
+|---|---|---|
+| Gateway IPFIX (usually already on) | Anything crossing the gateway: internet, inter-VLAN | Everything on the same subnet; much of the short flows (sampling) |
+| (B) AP uplink mirror (Kokabiel default) | Every frame between that AP's clients and anything else, unsampled, including broadcast/DHCP/ARP | Other APs' clients; client-to-client on the same AP; anything blocked inside the AP by client isolation |
+| (A) Gateway uplink mirror | All internet and inter-VLAN traffic, unsampled | Same-subnet traffic |
+| (C) Inter-switch uplink mirror | Clients to servers, servers to internet | Server-to-server on the server switch |
+| Host-level eBPF on servers (separate project) | Each server's own connections and DNS | Anything not touching that server |
+| Second probe on the server switch | Server-to-server | n/a |
+
+**Why an AP uplink is the default.** Wi-Fi clients are usually the largest and least controlled
+population, and on a flat subnet their traffic to servers never reaches the gateway, so it is
+recorded nowhere; their internet traffic is only sampled. A switch allows one mirror session with
+one source port, so mirror the uplink that carries the most clients (mesh APs backhauling through a
+wired AP are covered by it). (A) was rejected because the gateway already approximates it, (C) because
+it does not see Wi-Fi-to-internet, and multiple sources because the switch does not support them
+(and overlapping sources would double-count anyway).
+
 ## 1. Discovery checklist (UniFi)
 
 Collect these before choosing a placement. Most are in the UniFi UI; the API paths below are the
@@ -48,13 +87,16 @@ the device you queried. Read it together with the parent's `port_table`.
 
 ## 3. Rules of thumb
 
-- One mirror session and one source port per UniFi switch. Do not plan on multi-source.
+- One mirror session and one source port per switch was observed on the USW Flex 2.5G; check
+  `switch_caps` on other models. Do not plan on multi-source.
 - The destination port must be in the same mirror group as the source (observed, see
   [unifi-mirror.md](unifi-mirror.md)).
 - A mirror carries both directions, so a busy source can exceed the destination's line rate.
 - Avoid overlapping sources; the same packet would be counted twice.
 - Keep the probe's own management and export path off the mirrored link, or it observes itself.
-- Client isolation and same-AP traffic are invisible to every wired vantage point.
+- Client isolation and same-AP traffic are invisible to every wired vantage point (isolation is
+  enforced in the AP; Wi-Fi to wired blocking on the same subnet is as observed by the author, not
+  vendor-documented).
 - Flat networks hide lateral movement from the gateway, because same-subnet traffic never reaches it.
 - The gateway's NetFlow is worth enabling as a sampled baseline, but first check your collector for
   per-flow live lookups (see the feedback-loop warning in [collector.md](collector.md)).
