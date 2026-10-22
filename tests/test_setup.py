@@ -218,3 +218,16 @@ def test_setup_syslog_optional(probe):
 def test_setup_bad_config_exits_3(probe):
     r = run_setup(probe, "COLLECTOR_HOST=<COLLECTOR_IP>\n")
     assert r.rc == 3
+
+
+def test_setup_without_card_succeeds(probe):
+    r = run_setup(probe)
+    assert r.rc == 0, r.err
+    assert probe.uci("fstab.kokabiel_cap") == ""
+
+
+def test_setup_installs_sd_tools(probe):
+    assert run_setup(probe).rc == 0
+    for f in ("kokabiel-sd", "kokabiel-format-sd"):
+        assert probe.run(f"test -x /tmp/root/usr/sbin/{f}").rc == 0
+    assert probe.run("test -f /tmp/root/usr/libexec/kokabiel/sd.sh").rc == 0

@@ -9,6 +9,8 @@ KK_LIB="${KOKABIEL_LIB:-$(dirname "$0")/lib}"
 [ -d "$KK_LIB" ] || KK_LIB=/usr/libexec/kokabiel
 # shellcheck source=lib/common.sh disable=SC1091
 . "$KK_LIB/common.sh"
+# shellcheck source=lib/sd.sh disable=SC1091
+. "$KK_LIB/sd.sh"
 
 SCRIPT_DIR=$(dirname "$0")
 ROOT=${KOKABIEL_INSTALL_ROOT:-}
@@ -53,7 +55,7 @@ guard_lockout() {
 install_packages() {
 	[ "$SKIP_PACKAGES" = 1 ] && return 0
 	# Package list is extended by later tasks (exporter, ...).
-	kk_pkg_install softflowd ethtool
+	kk_pkg_install softflowd ethtool block-mount e2fsprogs sfdisk
 }
 
 # install_file SRC DST MODE: copy only when content differs.
@@ -71,13 +73,15 @@ install_files() {
 	for _f in "$KK_LIB"/*.sh; do
 		install_file "$_f" "$LIBEXEC/$(basename "$_f")" 0644
 	done
+	install_file "$SCRIPT_DIR/sd.sh" "$ROOT/usr/sbin/kokabiel-sd" 0755
+	install_file "$SCRIPT_DIR/format-sd.sh" "$ROOT/usr/sbin/kokabiel-format-sd" 0755
 	install_file "$SCRIPT_DIR/files/capture-prep" "$LIBEXEC/capture-prep" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel" "$ROOT/etc/init.d/kokabiel" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel-flows" "$ROOT/etc/init.d/kokabiel-flows" 0755
 	install_file "$SCRIPT_DIR/files/hotplug/30-kokabiel" "$ROOT/etc/hotplug.d/iface/30-kokabiel" 0644
 	# Keep the installed files across sysupgrade.
 	mkdir -p "$ROOT/etc"
-	for _p in /usr/libexec/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/; do
+	for _p in /usr/libexec/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/ /usr/sbin/kokabiel-sd /usr/sbin/kokabiel-format-sd; do
 		grep -qxF "$_p" "$ROOT/etc/sysupgrade.conf" 2>/dev/null ||
 			echo "$_p" >>"$ROOT/etc/sysupgrade.conf"
 	done
@@ -253,6 +257,7 @@ main() {
 	configure_system
 	configure_services
 	apply
+	kk_sd_mount
 	kk_log "setup complete"
 }
 
