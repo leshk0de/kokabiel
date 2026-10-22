@@ -69,14 +69,37 @@ install_file() {
 	chmod "$3" "$2"
 }
 
+# shim_is_aarch64 FILE: ELF64, little-endian, ET_DYN, EM_AARCH64 (header via od or hexdump).
+shim_is_aarch64() {
+	# BusyBox on OpenWrt ships hexdump but not od; accept either.
+	if command -v od >/dev/null 2>&1; then
+		_h=$(od -An -v -tx1 -N20 "$1" 2>/dev/null | tr -d '\n') || return 1
+	else
+		_h=$(head -c 20 "$1" 2>/dev/null | hexdump -v -e '1/1 "%02x "' 2>/dev/null) || return 1
+	fi
+	# shellcheck disable=SC2086 # intentional word splitting
+	set -- $_h
+	[ $# -ge 20 ] || return 1
+	[ "$1 $2 $3 $4 $5 $6" = "7f 45 4c 46 02 01" ] &&
+		[ "${17} ${18}" = "03 00" ] && [ "${19} ${20}" = "b7 00" ]
+}
+
 # install_shim: the libpcap immediate-mode LD_PRELOAD shim (built by 'make shim').
 install_shim() {
 	_so=
 	for _c in "$SCRIPT_DIR/../build/pcap_immediate.so" "$SCRIPT_DIR/files/pcap_immediate.so"; do
 		[ -f "$_c" ] && _so=$_c && break
 	done
+	_dst=$ROOT/usr/lib/kokabiel/pcap_immediate.so
+	if [ -n "$_so" ] && ! shim_is_aarch64 "$_so"; then
+		_m="pcap_immediate.so is not an aarch64 shared object; not installed"
+		logger -t kokabiel -p daemon.err "$_m" 2>/dev/null || true
+		echo "kokabiel: ERROR: $_m" >&2
+		rm -f "$_dst"
+		return 0
+	fi
 	if [ -n "$_so" ]; then
-		install_file "$_so" "$ROOT/usr/lib/kokabiel/pcap_immediate.so" 0644
+		install_file "$_so" "$_dst" 0644
 	else
 		kk_log "WARNING: softflowd will not process packets without the immediate-mode shim; run 'make shim'"
 	fi

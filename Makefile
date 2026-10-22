@@ -3,13 +3,15 @@ SH_FILES := $(wildcard scripts/*.sh scripts/lib/*.sh scripts/files/capture-prep 
 .PHONY: test lint tools shim
 
 # shim: build the libpcap immediate-mode LD_PRELOAD shim (aarch64 musl) inside the
-# test base image, so it matches the probe's ABI. Native on arm64 hosts; an x86
-# host needs Docker's arm64 emulation (qemu/binfmt). Rebuilds only if the .c is newer.
+# host emulates arm64 (needs qemu/binfmt). The base image manifest is labelled
+# linux/aarch64_generic, the only platform name Docker accepts for it.
+# Rebuilds only if the .c is newer.
+# host emulates arm64 (--platform linux/aarch64_generic; needs qemu/binfmt) (qemu/binfmt). Rebuilds only if the .c is newer.
 SHIM_IMAGE := $(shell sed -n 's/^FROM //p' tests/Dockerfile)
 
 build/pcap_immediate.so: scripts/files/pcap_immediate.c
 	mkdir -p build
-	docker run --rm -v "$(CURDIR)/scripts/files:/src:ro" -v "$(CURDIR)/build:/out" $(SHIM_IMAGE) \
+	docker run --rm --platform linux/aarch64_generic -v "$(CURDIR)/scripts/files:/src:ro" -v "$(CURDIR)/build:/out" $(SHIM_IMAGE) \
 		sh -c 'apk update >/dev/null && apk add gcc >/dev/null && gcc -shared -fPIC -O2 -s -o /out/pcap_immediate.so /src/pcap_immediate.c'
 
 shim: build/pcap_immediate.so

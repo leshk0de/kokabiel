@@ -12,11 +12,19 @@ SO = REPO / "build/pcap_immediate.so"
 DST = "/tmp/root/usr/lib/kokabiel/pcap_immediate.so"
 
 
-def stage_scripts(probe, with_shim):
+def elf_header(machine):
+    """printf-able 20-byte ELF64 LE ET_DYN header with the given e_machine bytes."""
+    return "\\177ELF\\002\\001\\001" + "\\000" * 9 + "\\003\\000" + machine
+
+
+def stage_scripts(probe, with_shim, where="build"):
     """Writable copy of scripts/ so setup's ../build lookup can be controlled."""
     probe.run("rm -rf /tmp/stage && mkdir -p /tmp/stage/build && cp -r /work/scripts /tmp/stage/")
-    if with_shim:
-        probe.run("printf dummy > /tmp/stage/build/pcap_immediate.so")
+    dst = {"build": "/tmp/stage/build", "files": "/tmp/stage/scripts/files"}[where]
+    if with_shim == "real":
+        probe.run(f"cp /work/build/pcap_immediate.so {dst}/")
+    elif with_shim:
+        probe.run(f"printf '{with_shim}' > {dst}/pcap_immediate.so")
 
 
 def run_staged_setup(probe):
@@ -35,12 +43,14 @@ def test_init_sets_ld_preload_when_shim_present():
     assert "/usr/lib/kokabiel/pcap_immediate.so" in (REPO / "scripts/lib/flows.sh").read_text()
 
 
-def test_setup_installs_shim_when_built(probe):
-    stage_scripts(probe, True)
+@pytest.mark.skipif(not SO.exists(), reason="build/pcap_immediate.so not built; run 'make shim'")
+@pytest.mark.parametrize("where", ["build", "files"])
+def test_setup_installs_shim_when_built(probe, where):
+    stage_scripts(probe, "real", where)
     r = run_staged_setup(probe)
     assert r.rc == 0, r.err
     assert probe.run(f"ls -l {DST}").out.startswith("-rw-r--r--")
-    assert probe.run(f"cat {DST}").out == "dummy"
+    assert probe.run(f"cmp {DST} /work/build/pcap_immediate.so").rc == 0
     assert "/usr/lib/kokabiel/" in probe.read("/tmp/root/etc/sysupgrade.conf").split()
 
 
@@ -72,3 +82,26 @@ def _processed(preload):
 def test_shim_makes_softflowd_process_packets(_container):
     assert _processed(None) == 0  # documents the stock softflowd 1.1.0 bug
     assert _processed("/work/build/pcap_immediate.so") > 0
+
+
+BAD = "pcap_immediate.so is not an aarch64 shared object; not installed"
+
+
+@pytest.mark.parametrize("content", ["not an elf at all", None])
+def test_setup_rejects_bad_shim(probe, content):
+    content = content or elf_header("\\076\\000")  # x86-64
+    stage_scripts(probe, content)
+    probe.run(f"mkdir -p {DST.rsplit('/', 1)[0]} && echo old > {DST}")
+    r = run_staged_setup(probe)
+    assert r.rc == 0, r.err
+    assert BAD in r.err
+    assert probe.run(f"test -e {DST}").rc != 0  # stale shim removed too
+    assert any("daemon.err" in c and BAD in c for c in probe.calls("logger"))
+
+
+def test_setup_accepts_aarch64_header(probe):
+    stage_scripts(probe, elf_header("\\267\\000"))
+    r = run_staged_setup(probe)
+    assert r.rc == 0, r.err
+    assert BAD not in r.err
+    assert probe.run(f"test -f {DST}").rc == 0
