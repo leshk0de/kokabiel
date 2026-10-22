@@ -21,7 +21,7 @@ test:
 
 lint:
 	@if [ -n "$(SH_FILES)" ]; then shellcheck -s sh $(SH_FILES); fi
-	@if [ -d ansible ]; then ansible-lint ansible/; else echo "ansible/ not present yet; skipping ansible-lint"; fi
+	@if [ -d ansible ]; then (cd ansible && ansible-lint); else echo "ansible/ not present yet; skipping ansible-lint"; fi
 
 tools:
 	brew install shellcheck
