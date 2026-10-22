@@ -101,3 +101,36 @@ def test_die_exit_code_and_message(probe):
     assert r.rc == 7
     assert "kokabiel: boom" in r.err
     assert any(c.startswith("logger -t kokabiel -p daemon.err") for c in probe.calls("logger"))
+
+
+def test_load_config_unterminated_quote(probe):
+    r = load(probe, 'COLLECTOR_HOST=192.0.2.10\nCAPTURE_IF="eth1\n')
+    assert r.rc == 3
+    assert "line 2" in r.err
+
+
+def test_load_config_rejects_unquoted_whitespace(probe):
+    r = load(probe, "COLLECTOR_HOST=192.0.2.10 extra\n")
+    assert r.rc == 3
+    assert "line 1" in r.err
+
+
+def test_load_config_does_not_execute_values(probe):
+    r = load(probe, 'COLLECTOR_HOST=192.0.2.10\nPROBE_NAME="$(touch /tmp/pwned)"\n',
+             extra='echo "$PROBE_NAME"')
+    assert r.rc == 0, r.err
+    assert r.out.strip() == "$(touch /tmp/pwned)"
+    assert probe.run("test -e /tmp/pwned").rc != 0
+
+
+def test_load_config_placeholder_with_comment(probe):
+    r = load(probe, "COLLECTOR_HOST=<COLLECTOR_IP> # set me\n")
+    assert r.rc == 3
+    assert "placeholder" in r.err and "COLLECTOR_HOST" in r.err
+
+
+def test_load_config_comments_and_trailing_comment(probe):
+    r = load(probe, '# hi\n\nCOLLECTOR_HOST=192.0.2.10 # c\nCAPTURE_IF="eth1" # c\n',
+             extra='echo "$COLLECTOR_HOST $CAPTURE_IF"')
+    assert r.rc == 0, r.err
+    assert r.out.strip() == "192.0.2.10 eth1"
