@@ -134,3 +134,12 @@ def test_load_config_comments_and_trailing_comment(probe):
              extra='echo "$COLLECTOR_HOST $CAPTURE_IF"')
     assert r.rc == 0, r.err
     assert r.out.strip() == "192.0.2.10 eth1"
+
+
+def test_load_config_disable_services_default_and_override(probe):
+    r = load(probe, "COLLECTOR_HOST=192.0.2.10\n", extra='echo "$KOKABIEL_DISABLE_SERVICES"')
+    assert r.rc == 0, r.err
+    assert r.out.split()[0] == "ttyd" and "odhcpd" in r.out.split()
+    r = load(probe, "COLLECTOR_HOST=192.0.2.10\nKOKABIEL_DISABLE_SERVICES='ttyd sqm'\n",
+             extra='echo "$KOKABIEL_DISABLE_SERVICES"')
+    assert r.out.strip() == "ttyd sqm"

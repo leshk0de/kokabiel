@@ -37,7 +37,7 @@ _kk_uint() {
 	fi
 }
 
-_KK_VARS="COLLECTOR_HOST COLLECTOR_PORT EXPORT_VERSION CAPTURE_IF MGMT_IF PROBE_NAME CAPTURE_DIR CAPTURE_SD_MAX_MB CAPTURE_RAM_MAX_MB ENABLE_LUCI SYSLOG_HOST SYSLOG_PORT SYSLOG_PROTO METRICS_ALLOWED_SRC TRACK_LEVEL"
+_KK_VARS="COLLECTOR_HOST COLLECTOR_PORT EXPORT_VERSION CAPTURE_IF MGMT_IF PROBE_NAME CAPTURE_DIR CAPTURE_SD_MAX_MB CAPTURE_RAM_MAX_MB ENABLE_LUCI SYSLOG_HOST SYSLOG_PORT SYSLOG_PROTO METRICS_ALLOWED_SRC TRACK_LEVEL KOKABIEL_DISABLE_SERVICES"
 
 # _kk_parse_env FILE: safe KEY=VALUE parser (no eval of file content). Accepts
 # blank lines, # comments, CRLF, and one layer of matching quotes; a trailing
@@ -134,6 +134,7 @@ kk_load_config() {
 	: "${SYSLOG_PROTO:=udp}"
 	: "${METRICS_ALLOWED_SRC:=}"
 	: "${TRACK_LEVEL:=full}"
+	: "${KOKABIEL_DISABLE_SERVICES:=ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm nlbwmon radius avahi-daemon collectd luci_statistics watchcat hd-idle fa-fancontrol odhcpd}"
 
 	case ${COLLECTOR_HOST:-} in
 	'') kk_die "COLLECTOR_HOST is required (set it in $_kk_file)" ;;
@@ -158,7 +159,7 @@ kk_load_config() {
 
 	export COLLECTOR_HOST COLLECTOR_PORT EXPORT_VERSION CAPTURE_IF MGMT_IF PROBE_NAME \
 		CAPTURE_DIR CAPTURE_SD_MAX_MB CAPTURE_RAM_MAX_MB ENABLE_LUCI SYSLOG_HOST \
-		SYSLOG_PORT SYSLOG_PROTO METRICS_ALLOWED_SRC TRACK_LEVEL
+		SYSLOG_PORT SYSLOG_PROTO METRICS_ALLOWED_SRC TRACK_LEVEL KOKABIEL_DISABLE_SERVICES
 }
 
 # kk_uci_get OPTION: value of kokabiel.main.OPTION (empty if unset).

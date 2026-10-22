@@ -19,7 +19,7 @@ STUB_COMMANDS = (
 # Services named in the spec's discovery list, plus the ones Kokabiel owns.
 INIT_SERVICES = (
     "ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm "
-    "nlbwmon radius avahi collectd luci_statistics watchcat hd-idle fa-fancontrol "
+    "nlbwmon radius avahi avahi-daemon collectd luci_statistics watchcat hd-idle fa-fancontrol "
     "uhttpd dropbear firewall network log cron sysntpd dnsmasq rpcd blockd fstab "
     "triggerhappy packet_steering urngd odhcpd "
     "softflowd kokabiel kokabiel-flows prometheus-node-exporter-lua"
@@ -60,7 +60,7 @@ def _default_stub(name):
 def _reset_script():
     parts = [
         "rm -rf /tmp/sys /tmp/proc /tmp/stubs /tmp/initd /etc/kokabiel "
-        "/usr/libexec/kokabiel /tmp/stubs.log",
+        "/usr/libexec/kokabiel /tmp/stubs.log /tmp/root",
         "mkdir -p /tmp/sys /tmp/proc /tmp/stubs /tmp/initd /etc/kokabiel "
         "/usr/libexec/kokabiel",
         ": > /tmp/stubs.log",
