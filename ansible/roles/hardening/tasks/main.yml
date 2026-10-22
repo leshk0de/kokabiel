@@ -1,4 +1,180 @@
 ---
-# Stub: filled in by a later task.
-- name: Placeholder
-  ansible.builtin.meta: noop
+# ---- SSH key -------------------------------------------------------------
+- name: Install the SSH public key
+  when: ssh_pubkey | string | length > 0
+  block:
+    - name: Create /etc/dropbear
+      ansible.builtin.file:
+        path: /etc/dropbear
+        state: directory
+        mode: "0700"
+        owner: root
+        group: root
+
+    - name: Authorize the public key for root
+      ansible.builtin.lineinfile:
+        path: /etc/dropbear/authorized_keys
+        line: >-
+          {{ (ssh_pubkey if ssh_pubkey is match('^(ssh|ecdsa|sk)-')
+          else lookup('ansible.builtin.file', ssh_pubkey | expanduser)) | trim }}
+        create: true
+        mode: "0600"
+        owner: root
+        group: root
+
+# ---- Root passphrase -----------------------------------------------------
+# Everything below runs on the controller or touches the secret, so every task
+# is no_log except the final display task. Controller-side modules use the
+# playbook's own Python (localhost has no /usr/bin/python3 guarantee).
+- name: Root passphrase
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  block:
+    - name: Make sure the local logs directory exists
+      delegate_to: localhost
+      become: false
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/logs"
+        state: directory
+        mode: "0700"
+
+    - name: Look for an existing local passphrase file
+      delegate_to: localhost
+      become: false
+      ansible.builtin.stat:
+        path: "{{ hardening_pw_file }}"
+      register: hardening_pw_stat
+
+    - name: Ask whether to rotate the root passphrase
+      ansible.builtin.pause:
+        prompt: "Rotate root passphrase on {{ inventory_hostname }}? [y/N]"
+      register: hardening_rotate_answer
+      when:
+        - hardening_pw_stat.stat.exists
+        - rotate_root_passphrase is undefined
+
+    - name: Decide whether to set a new root passphrase
+      ansible.builtin.set_fact:
+        hardening_set_pw: >-
+          {{ not hardening_pw_stat.stat.exists
+          or (rotate_root_passphrase | default(false) | bool)
+          or ((hardening_rotate_answer.user_input | default('')) | trim | lower == 'y') }}
+
+    - name: Set the root passphrase
+      when: hardening_set_pw | bool
+      block:
+        - name: Generate a passphrase
+          delegate_to: localhost
+          become: false
+          ansible.builtin.command: "{{ ansible_playbook_python }} {{ playbook_dir }}/files/passphrase.py"
+          register: hardening_pw_gen
+          changed_when: false
+          no_log: true
+
+        - name: Remember the new passphrase for this run
+          ansible.builtin.set_fact:
+            hardening_pw: "{{ hardening_pw_gen.stdout | trim }}"
+          no_log: true
+
+        - name: Save the passphrase locally as PENDING before applying it
+          delegate_to: localhost
+          become: false
+          ansible.builtin.lineinfile:
+            path: "{{ hardening_pw_file }}"
+            line: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }} PENDING {{ hardening_pw }}"
+            create: true
+            mode: "0600"
+            insertafter: EOF
+          no_log: true
+
+        - name: Apply the passphrase on the probe
+          block:
+            - name: Set the root password
+              ansible.builtin.command: passwd root
+              args:
+                stdin: "{{ hardening_pw }}\n{{ hardening_pw }}"
+              changed_when: true
+              no_log: true
+
+            - name: Mark the previous ACTIVE passphrase RETIRED
+              delegate_to: localhost
+              become: false
+              ansible.builtin.replace:
+                path: "{{ hardening_pw_file }}"
+                regexp: '^(\S+) ACTIVE (\S+)$'
+                replace: '\1 RETIRED \2'
+              no_log: true
+
+            - name: Mark the new passphrase ACTIVE
+              delegate_to: localhost
+              become: false
+              ansible.builtin.replace:
+                path: "{{ hardening_pw_file }}"
+                regexp: '^(\S+) PENDING {{ hardening_pw | regex_escape }}$'
+                replace: '\1 ACTIVE {{ hardening_pw }}'
+              no_log: true
+          rescue:
+            - name: Mark the new passphrase FAILED
+              delegate_to: localhost
+              become: false
+              ansible.builtin.replace:
+                path: "{{ hardening_pw_file }}"
+                regexp: '^(\S+) PENDING {{ hardening_pw | regex_escape }}$'
+                replace: '\1 FAILED {{ hardening_pw }}'
+              no_log: true
+
+            - name: Fail because the passphrase could not be applied
+              ansible.builtin.fail:
+                msg: Could not set the root passphrase on {{ inventory_hostname }}; it is recorded as FAILED in {{ hardening_pw_file }}.
+
+        - name: Show the new root passphrase
+          ansible.builtin.debug:
+            msg: "root passphrase for {{ inventory_hostname }}: {{ hardening_pw }} (saved to {{ hardening_pw_file }})"
+          when: show_secrets | default(true) | bool
+          no_log: false
+
+# ---- Password login ------------------------------------------------------
+- name: Verify key login from the controller
+  delegate_to: localhost
+  become: false
+  ansible.builtin.command:
+    argv: >-
+      {{ ['ssh', '-o', 'BatchMode=yes', '-o', 'PasswordAuthentication=no',
+      '-o', 'PubkeyAuthentication=yes', '-o', 'StrictHostKeyChecking=accept-new',
+      '-p', (ansible_port | default(22) | string)]
+      + (['-i', ansible_ssh_private_key_file] if ansible_ssh_private_key_file is defined else [])
+      + ['root@' ~ (ansible_host | default(inventory_hostname)), 'true'] }}
+  register: hardening_key_check
+  changed_when: false
+  failed_when: false
+  when: disable_password_login | bool
+
+- name: Refuse to disable password login without a working key
+  ansible.builtin.fail:
+    msg: Key login could not be verified; leaving password login ON
+  when:
+    - disable_password_login | bool
+    - hardening_key_check.rc != 0
+
+- name: Set dropbear password login options
+  ansible.builtin.shell: |
+    changed=0
+    for opt in PasswordAuth RootPasswordAuth; do
+      cur=$(uci -q get "dropbear.@dropbear[0].$opt")
+      if [ "$cur" != "$HARDENING_PW_VALUE" ]; then
+        uci set "dropbear.@dropbear[0].$opt=$HARDENING_PW_VALUE"
+        changed=1
+      fi
+    done
+    if [ "$changed" = 1 ]; then
+      uci commit dropbear
+      echo KOKABIEL_CHANGED
+    fi
+  environment:
+    HARDENING_PW_VALUE: "{{ 'off' if disable_password_login | bool else 'on' }}"
+  register: hardening_dropbear
+  changed_when: "'KOKABIEL_CHANGED' in hardening_dropbear.stdout"
+  notify: Restart dropbear
+
+- name: Apply dropbear changes now
+  ansible.builtin.meta: flush_handlers
