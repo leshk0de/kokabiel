@@ -3,7 +3,8 @@
 # Usage: kokabiel-format-sd --device DEV [--confirm ERASE] [--probe NAME]
 # Exit codes: 0 ok, 3 usage/failure, 6 not a safe SD device, 7 not confirmed.
 #
-# Test hooks: KOKABIEL_SD_SETTLE seconds to wait for the new partition node (5).
+# Test hooks: KOKABIEL_SD_SETTLE seconds to wait for the new partition node (5),
+# KOKABIEL_SD_NODE_TEST test(1) operator used for that node (-b).
 
 KK_LIB="${KOKABIEL_LIB:-$(dirname "$0")/lib}"
 [ -d "$KK_LIB" ] || KK_LIB=/usr/libexec/kokabiel
@@ -46,13 +47,17 @@ if [ "$CONFIRM" != ERASE ]; then
 	printf 'Erase SD card %sMB %s on %s and use it for captures? Type ERASE to confirm: ' \
 		"$((_sect / 2048))" "$_ser" "$PROBE"
 	if ( : </dev/tty ) 2>/dev/null; then
-		read -r _ans </dev/tty || _ans=
+		IFS= read -r _ans </dev/tty || _ans=
 	else
-		read -r _ans || _ans=
+		IFS= read -r _ans || _ans=
 	fi
 	echo
 	[ "$_ans" = ERASE ] || kk_die "not confirmed; $DEV untouched" 7
 fi
+
+# Re-check right before the destructive part: the world may have changed while
+# the prompt was waiting for an answer (or --confirm was scripted).
+kk_sd_safe "${DEV#/dev/}" || kk_die "$DEV is no longer a safe SD card; aborting, nothing erased" 6
 
 # Release any partition of the card that is mounted.
 for _p in $(_kk_sd_parts "${DEV#/dev/}"); do
@@ -64,11 +69,14 @@ done
 PART=${DEV}p1
 dd if=/dev/zero of="$DEV" bs=1M count=16 || kk_die "dd failed on $DEV"
 echo 'type=83' | sfdisk "$DEV" || kk_die "sfdisk failed on $DEV"
+# Test hook: KOKABIEL_SD_NODE_TEST (default -b) is the test(1) operator for the node.
+KOKABIEL_SD_NODE_TEST=${KOKABIEL_SD_NODE_TEST:--b}
 _i=0
-while [ ! -b "$PART" ] && [ "$_i" -lt "${KOKABIEL_SD_SETTLE:-5}" ]; do
+while ! test "$KOKABIEL_SD_NODE_TEST" "$PART" && [ "$_i" -lt "${KOKABIEL_SD_SETTLE:-5}" ]; do
 	sleep 1
 	_i=$((_i + 1))
 done
+test "$KOKABIEL_SD_NODE_TEST" "$PART" || kk_die "$PART did not appear after partitioning" 3
 mkfs.ext4 -F -L "$KK_SD_LABEL" "$PART" || kk_die "mkfs.ext4 failed on $PART"
 
 _t=$(mktemp -d /tmp/kokabiel-fmt.XXXXXX) || kk_die "cannot create temp dir"

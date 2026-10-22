@@ -231,3 +231,26 @@ def test_setup_installs_sd_tools(probe):
     for f in ("kokabiel-sd", "kokabiel-format-sd"):
         assert probe.run(f"test -x /tmp/root/usr/sbin/{f}").rc == 0
     assert probe.run("test -f /tmp/root/usr/libexec/kokabiel/sd.sh").rc == 0
+
+
+def test_setup_removes_stale_fstab_section_without_card(probe):
+    probe.run("touch /etc/config/fstab; uci set fstab.kokabiel_cap=mount; "
+              "uci set fstab.kokabiel_cap.uuid=stale; uci commit fstab")
+    assert probe.uci("fstab.kokabiel_cap") == "mount"
+    assert run_setup(probe).rc == 0
+    assert probe.uci("fstab.kokabiel_cap") == ""
+
+
+def test_setup_rerun_keeps_fstab_for_mounted_card(probe):
+    probe.stub("blkid", '#!/bin/sh\necho \'/dev/mmcblk1p1: LABEL="KOKABIEL-CAP" '
+               'UUID="00000000-0000-4000-8000-0000000000c1" TYPE="ext4"\'\n')
+    probe.run("mkdir -p /tmp/capmnt && touch /tmp/capmnt/.kokabiel")
+    probe.fake_mmc("mmcblk1", "SD", 7733248, partitions=["mmcblk1p1"])
+    probe.write("/tmp/proc/mounts", "/dev/mmcblk1p1 /tmp/capmnt ext4 rw 0 0\n")
+    probe.mountinfo("36 35 179:9 / /tmp/capmnt rw - ext4 /dev/mmcblk1p1 rw")
+    probe.run("touch /etc/config/fstab; uci set fstab.kokabiel_cap=mount; "
+              "uci set fstab.kokabiel_cap.uuid=old; uci commit fstab")
+    r = run_setup(probe, site="COLLECTOR_HOST=192.0.2.10\nCAPTURE_DIR=/tmp/capmnt\n")
+    assert r.rc == 0, r.err
+    assert probe.uci("fstab.kokabiel_cap.uuid") == "00000000-0000-4000-8000-0000000000c1"
+    assert probe.uci("fstab.kokabiel_cap.target") == "/tmp/capmnt"

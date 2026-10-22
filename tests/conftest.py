@@ -149,8 +149,18 @@ class Probe:
             f"echo {shlex.quote(serial)} > {base}/device/serial",
             f"echo {shlex.quote(name)} > {base}/device/name",
         ]
-        cmds += [f"mkdir -p {base}/{shlex.quote(p)}" for p in partitions]
+        # device numbers: major 179, minor = 8 * disk index + partition number
+        disk = int(name.removeprefix("mmcblk"))
+        cmds.append(f"echo 179:{disk * 8} > {base}/dev")
+        for p in partitions:
+            minor = disk * 8 + int(p.rsplit("p", 1)[1])
+            cmds.append(f"mkdir -p {base}/{shlex.quote(p)}")
+            cmds.append(f"echo 179:{minor} > {base}/{shlex.quote(p)}/dev")
         self._sh("\n".join(cmds))
+
+    def mountinfo(self, *lines):
+        """Write /tmp/proc/self/mountinfo (the guard fails closed without it)."""
+        self.write("/tmp/proc/self/mountinfo", "".join(ln + "\n" for ln in lines))
 
     def reset(self):
         self._sh(_reset_script())
