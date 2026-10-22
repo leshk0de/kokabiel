@@ -38,10 +38,10 @@ A generic reference topology (yours will differ):
 
 **Why an AP uplink is the default.** Wi-Fi clients are usually the largest and least controlled
 population, and on a flat subnet their traffic to servers never reaches the gateway, so it is
-recorded nowhere; their internet traffic is only sampled. A switch allows one mirror session with
-one source port, so mirror the uplink that carries the most clients (mesh APs backhauling through a
+recorded nowhere; their internet traffic is only sampled. The USW Flex 2.5G was observed to allow one
+mirror session with one source port (check `switch_caps` on other models), so mirror the uplink that carries the most clients (mesh APs backhauling through a
 wired AP are covered by it). (A) was rejected because the gateway already approximates it, (C) because
-it does not see Wi-Fi-to-internet, and multiple sources because the switch does not support them
+it does not see Wi-Fi-to-internet, and multiple sources because the observed switch does not support them
 (and overlapping sources would double-count anyway).
 
 ## 1. Discovery checklist (UniFi)
