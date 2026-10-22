@@ -166,9 +166,14 @@
         - name: Show the new root passphrase on the controller terminal only
           delegate_to: localhost
           become: false
+          vars:
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+            # Workers setsid() by default (ansible-core 2.21), which makes
+            # /dev/tty unopenable; keep the exception to this one task.
+            ansible_worker_session_isolation: false
           ansible.builtin.shell: cat > /dev/tty
           args:
-            stdin: "root passphrase for {{ inventory_hostname }}: {{ hardening_pw }}"
+            stdin: "KOKABIEL ROOT PASSPHRASE for {{ inventory_hostname }}: {{ hardening_pw }}"
           changed_when: false
           failed_when: false
           when: show_secrets | default(true) | bool
