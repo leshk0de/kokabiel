@@ -1,7 +1,7 @@
 ---
 # Path to a public key file (e.g. ~/.ssh/id_ed25519.pub) or the key text itself.
-# Empty means no key is installed.
-ssh_pubkey: ""
+# Empty means no key is installed. Must be a single public-key line.
+ssh_pubkey: "~/.ssh/id_ed25519.pub"
 # Turn password login off once key login is verified from the controller.
 disable_password_login: false
 # Print the generated root passphrase at the end of the run.

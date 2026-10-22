@@ -67,7 +67,8 @@ capture port (no address, promiscuous). An optional microSD card holds on-demand
 ## Quick start
 
 You need on your workstation: Docker (for the shim build), `uv`, Ansible, and an SSH key at
-`~/.ssh/id_ed25519.pub` (a single public-key line), referenced by `ssh_pubkey` in the inventory.
+`~/.ssh/id_ed25519.pub` (a single public-key line); set `ssh_pubkey` only if your key
+lives elsewhere.
 
 > **Required before deploying: `make shim`.** softflowd 1.1.0 on OpenWrt 25.12 processes **zero
 > packets**: it never enables libpcap's immediate mode, so the TPACKET_V3 block timeout is infinite
@@ -90,16 +91,17 @@ You need on your workstation: Docker (for the shim build), `uv`, Ansible, and an
    Probes live in the group `kokabiel`; `collector_host` is the only required variable.
 3. **Install tooling and build the shim:**
    ```sh
-   make tools   # shellcheck, ansible-core, ansible-lint
+   make tools   # shellcheck, ansible-core, ansible-lint (uses Homebrew: macOS-oriented; elsewhere install them yourself)
    make shim    # build/pcap_immediate.so
    ```
-4. **First run, before cabling eth1.** Use the temporary password; skip the status check, which
+4. **First run, before cabling eth1.** Host key checking is on, so SSH to the probe once
+   (`ssh root@<probe>`, accept the key) or run `ssh-keyscan <probe> >> ~/.ssh/known_hosts` first. Use the temporary password; skip the status check, which
    needs the capture link up:
    ```sh
    cd ansible
    ansible-playbook site.yml --ask-pass --skip-tags status
    ```
-   The play installs Python and packages, configures the probe, installs your SSH key (via `ssh_pubkey`), sets a
+   The play installs Python and packages, configures the probe, installs your SSH key, sets a
    generated root passphrase, offers to prepare the SD card, and ends by printing a
    ready-to-paste Prometheus scrape snippet.
 5. **Cable eth1** to the mirror destination port and configure the mirror
@@ -146,7 +148,7 @@ from the role `defaults/`.
 | `enable_luci` | `0` | `1` = LuCI on 127.0.0.1 only |
 | `syslog_host` | unset | optional remote syslog target |
 | `metrics_allowed_src` | management subnet | CIDR allowed to scrape TCP 9100 |
-| `ssh_pubkey` | empty (example host_vars sets `~/.ssh/id_ed25519.pub`) | public key file or text to install; empty installs no key |
+| `ssh_pubkey` | `~/.ssh/id_ed25519.pub` | public key file or text to install (a single public-key line); empty installs no key |
 | `disable_password_login` | `false` | turn off password SSH, only after key login is verified |
 | `show_secrets` | `true` | print the root passphrase at the end (`-e show_secrets=false` for unattended runs) |
 | `rotate_root_passphrase` | prompted | `-e rotate_root_passphrase=true` rotates without a prompt |
@@ -178,7 +180,7 @@ handle SSH keys, passphrases and Python yourself.
 | Command | What it does |
 |---|---|
 | `kokabiel-status` | read-only health check printing OK/FAIL/INFO lines, exit 1 on any FAIL. Checks the capture link, promiscuous mode, no address, MAC guard, softflowd running, the shim loaded (`flows_shim`), and that listeners are a subset of ports 22 and 9100 |
-| `kokabiel-capture <ip-or-mac> [seconds] [--max-mb N]` | time-boxed, size-capped `tcpdump` for one device to the SD card (RAM fallback). Last stdout line is JSON; exit codes 0 ok, 2, 3, 4, 5, 75 (busy) |
+| `kokabiel-capture <ip-or-mac> [seconds] [--max-mb N]` | time-boxed, size-capped `tcpdump` for one device to the SD card (RAM fallback). Last stdout line is JSON; exit codes 0 ok, 2 usage, 3 config, 4 space/memory, 5 tcpdump failed, 75 busy |
 | `kokabiel-sd describe\|mount` | show or mount the SD card |
 
 ### Captures from your workstation
@@ -250,7 +252,7 @@ The user button reboots the device (FriendlyWrt trigger); there is no long-press
 
 ## Performance
 
-Not yet measured; see Task 16. Idle, 24-hour household and sustained-transfer numbers (CPU, memory,
+Not yet measured. Idle, 24-hour household and sustained-transfer numbers (CPU, memory,
 temperature, NIC and pcap drops, flows per second) will be added here with the firmware version
 and date.
 

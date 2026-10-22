@@ -9,7 +9,8 @@ the local console (keyboard and monitor attached to the probe), make SSH reachab
 > DHCP server (and IPv6 router advertisements) on that port. Plugging it into your home switch
 > before Kokabiel's setup has stripped that role would hand out wrong addresses to your whole
 > network. Cable only the WAN / management port (eth0). Connect eth1 after the playbook has run
-> and `kokabiel-status` confirms the capture port has no address and no DHCP.
+> and `kokabiel-status` confirms the capture port has no address (setup disables its DHCP/RA
+> server; status does not check that, so cable it only after the play has completed).
 
 ## 1. Log in
 
@@ -68,7 +69,8 @@ From your own machine, `ssh root@<probe-address>` should now prompt for the temp
 ## 5. Install your SSH key (optional here)
 
 The Ansible play installs your key for you (default `~/.ssh/id_ed25519.pub`, which must be a
-single public-key line). If you want key access before running it:
+single public-key line; override with `ssh_pubkey`). Host key checking is on: SSH to the probe
+once (or `ssh-keyscan`) before the first Ansible run. If you want key access before running it:
 
 ```sh
 ssh-copy-id -i ~/.ssh/id_ed25519.pub root@<probe-address>
