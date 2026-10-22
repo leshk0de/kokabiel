@@ -55,7 +55,7 @@ guard_lockout() {
 install_packages() {
 	[ "$SKIP_PACKAGES" = 1 ] && return 0
 	# Package list is extended by later tasks (exporter, ...).
-	kk_pkg_install softflowd ethtool block-mount e2fsprogs sfdisk
+	kk_pkg_install softflowd ethtool block-mount e2fsprogs sfdisk tcpdump
 }
 
 # install_file SRC DST MODE: copy only when content differs.
@@ -75,13 +75,14 @@ install_files() {
 	done
 	install_file "$SCRIPT_DIR/sd.sh" "$ROOT/usr/sbin/kokabiel-sd" 0755
 	install_file "$SCRIPT_DIR/format-sd.sh" "$ROOT/usr/sbin/kokabiel-format-sd" 0755
+	install_file "$SCRIPT_DIR/capture.sh" "$ROOT/usr/sbin/kokabiel-capture" 0755
 	install_file "$SCRIPT_DIR/files/capture-prep" "$LIBEXEC/capture-prep" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel" "$ROOT/etc/init.d/kokabiel" 0755
 	install_file "$SCRIPT_DIR/files/init.d/kokabiel-flows" "$ROOT/etc/init.d/kokabiel-flows" 0755
 	install_file "$SCRIPT_DIR/files/hotplug/30-kokabiel" "$ROOT/etc/hotplug.d/iface/30-kokabiel" 0644
 	# Keep the installed files across sysupgrade.
 	mkdir -p "$ROOT/etc"
-	for _p in /usr/libexec/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/ /usr/sbin/kokabiel-sd /usr/sbin/kokabiel-format-sd; do
+	for _p in /usr/libexec/kokabiel/ /etc/init.d/kokabiel /etc/init.d/kokabiel-flows /etc/hotplug.d/iface/30-kokabiel /etc/kokabiel/ /usr/sbin/kokabiel-sd /usr/sbin/kokabiel-format-sd /usr/sbin/kokabiel-capture; do
 		grep -qxF "$_p" "$ROOT/etc/sysupgrade.conf" 2>/dev/null ||
 			echo "$_p" >>"$ROOT/etc/sysupgrade.conf"
 	done

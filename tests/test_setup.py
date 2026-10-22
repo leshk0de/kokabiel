@@ -228,7 +228,7 @@ def test_setup_without_card_succeeds(probe):
 
 def test_setup_installs_sd_tools(probe):
     assert run_setup(probe).rc == 0
-    for f in ("kokabiel-sd", "kokabiel-format-sd"):
+    for f in ("kokabiel-sd", "kokabiel-format-sd", "kokabiel-capture"):
         assert probe.run(f"test -x /tmp/root/usr/sbin/{f}").rc == 0
     assert probe.run("test -f /tmp/root/usr/libexec/kokabiel/sd.sh").rc == 0
 
