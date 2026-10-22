@@ -67,7 +67,7 @@ capture port (no address, promiscuous). An optional microSD card holds on-demand
 ## Quick start
 
 You need on your workstation: Docker (for the shim build), `uv`, Ansible, and an SSH key at
-`~/.ssh/id_ed25519.pub` (a single public-key line).
+`~/.ssh/id_ed25519.pub` (a single public-key line), referenced by `ssh_pubkey` in the inventory.
 
 > **Required before deploying: `make shim`.** softflowd 1.1.0 on OpenWrt 25.12 processes **zero
 > packets**: it never enables libpcap's immediate mode, so the TPACKET_V3 block timeout is infinite
@@ -99,7 +99,7 @@ You need on your workstation: Docker (for the shim build), `uv`, Ansible, and an
    cd ansible
    ansible-playbook site.yml --ask-pass --skip-tags status
    ```
-   The play installs Python and packages, configures the probe, installs your SSH key, sets a
+   The play installs Python and packages, configures the probe, installs your SSH key (via `ssh_pubkey`), sets a
    generated root passphrase, offers to prepare the SD card, and ends by printing a
    ready-to-paste Prometheus scrape snippet.
 5. **Cable eth1** to the mirror destination port and configure the mirror
@@ -146,7 +146,7 @@ from the role `defaults/`.
 | `enable_luci` | `0` | `1` = LuCI on 127.0.0.1 only |
 | `syslog_host` | unset | optional remote syslog target |
 | `metrics_allowed_src` | management subnet | CIDR allowed to scrape TCP 9100 |
-| `ssh_pubkey` | `~/.ssh/id_ed25519.pub` | public key file or text to install |
+| `ssh_pubkey` | empty (example host_vars sets `~/.ssh/id_ed25519.pub`) | public key file or text to install; empty installs no key |
 | `disable_password_login` | `false` | turn off password SSH, only after key login is verified |
 | `show_secrets` | `true` | print the root passphrase at the end (`-e show_secrets=false` for unattended runs) |
 | `rotate_root_passphrase` | prompted | `-e rotate_root_passphrase=true` rotates without a prompt |
