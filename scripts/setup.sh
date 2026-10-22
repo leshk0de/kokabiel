@@ -14,19 +14,38 @@ SCRIPT_DIR=$(dirname "$0")
 ROOT=${KOKABIEL_INSTALL_ROOT:-}
 LIBEXEC=$ROOT/usr/libexec/kokabiel
 
-# guard_lockout: refuse before touching anything if CAPTURE_IF is how we are
-# reaching the box (default route, or the local address of this SSH session).
+# _carries_capture DEV: true if DEV is CAPTURE_IF or a bridge that has it as a port.
+_carries_capture() {
+	[ "$1" = "$CAPTURE_IF" ] && return 0
+	[ -e "$(kk_sysfs "class/net/$1/brif/$CAPTURE_IF")" ] && return 0
+	for _s in $(uci_sections network device); do
+		[ "$(uci -q get "$_s.name")" = "$1" ] || continue
+		uci -q get "$_s.ports" | tr ' ' '\n' | grep -qx "$CAPTURE_IF" && return 0
+	done
+	return 1
+}
+
+# guard_lockout: refuse before touching anything if CAPTURE_IF (directly or as a
+# bridge port) carries the default route or the local address of this SSH session.
 guard_lockout() {
-	if ip route show default 2>/dev/null | grep -Eq "(^|[[:space:]])dev $CAPTURE_IF([[:space:]]|\$)"; then
-		kk_die "$CAPTURE_IF carries the default route; refusing to take it out of service (set CAPTURE_IF to the mirror port)" 4
-	fi
+	_devs=$( (ip route show default; ip -6 route show default) 2>/dev/null |
+		awk '{ for (i = 1; i < NF; i++) if ($i == "dev") print $(i + 1) }')
+	for _d in $_devs; do
+		_carries_capture "$_d" &&
+			kk_die "$_d (which includes $CAPTURE_IF) carries the default route; refusing to take $CAPTURE_IF out of service (set CAPTURE_IF to the mirror port)" 4
+	done
 	if [ -n "${SSH_CONNECTION:-}" ]; then
 		# shellcheck disable=SC2086 # intentional word splitting
 		set -- $SSH_CONNECTION
 		_local=${3:-}
-		if [ -n "$_local" ] &&
-			ip -o -4 addr show dev "$CAPTURE_IF" 2>/dev/null | grep -Eq "inet $_local/"; then
-			kk_die "this SSH session arrives on $CAPTURE_IF ($_local); refusing to lock you out" 4
+		if [ -n "$_local" ]; then
+			_devs=$(ip -o addr show 2>/dev/null |
+				awk -v a="$_local" '{ for (i = 3; i <= NF; i++) if ($i == "inet" || $i == "inet6") { split($(i + 1), p, "/"); if (p[1] == a) print $2 } }')
+			for _d in $_devs; do
+				_d=${_d%%@*}
+				_carries_capture "$_d" &&
+					kk_die "this SSH session arrives on $_d ($_local), which includes $CAPTURE_IF; refusing to lock you out" 4
+			done
 		fi
 	fi
 }

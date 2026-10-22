@@ -115,25 +115,82 @@ def test_setup_dropbear_interface_deleted(probe):
     assert probe.uci("dropbear.@dropbear[0].Interface") == ""
 
 
-def test_setup_refuses_when_capture_if_is_ssh_path(probe):
-    probe.stub("ip", 'case "$*" in "-o -4 addr show dev eth1")'
-                     ' echo "3: eth1    inet 192.0.2.20/24 brd 192.0.2.255 scope global eth1";; esac')
+def ip_stub(probe, addr_lines="", route4="", route6=""):
+    probe.stub("ip", f"""case "$*" in
+"-o addr show") cat <<'EOT'
+{addr_lines}
+EOT
+;;
+"route show default") cat <<'EOT'
+{route4}
+EOT
+;;
+"-6 route show default") cat <<'EOT'
+{route6}
+EOT
+;;
+esac""")
+
+
+def refused(probe, env=None, bridge_ports=None, brif=False):
     probe.fake_nic("eth0", "02:00:00:00:00:01")
     probe.fake_nic("eth1", "02:00:00:00:00:02")
+    if brif:
+        probe.run("mkdir -p /tmp/sys/class/net/br-lan/brif/eth1")
     before = snapshot(probe)
-    r = run_setup(probe, env={"SSH_CONNECTION": "198.51.100.5 5000 192.0.2.20 22"})
+    r = run_setup(probe, env=env)
     assert r.rc == 4, r.err
     assert snapshot(probe) == before
     assert probe.run("uci changes").out.strip() == ""
-    assert not probe.run("ls /etc/config/kokabiel").rc == 0
+    assert probe.run("ls /etc/config/kokabiel").rc != 0
+    assert probe.run("find /tmp/root -type f 2>/dev/null").out.strip() == ""
 
 
-def test_setup_refuses_when_capture_if_has_default_route(probe):
-    probe.stub("ip", 'case "$*" in "route show default")'
-                     ' echo "default via 192.0.2.1 dev eth1";; esac')
-    r = run_setup(probe)
-    assert r.rc == 4, r.err
-    assert probe.run("uci changes").out.strip() == ""
+SSH4 = {"SSH_CONNECTION": "198.51.100.5 5000 192.0.2.20 22"}
+BRLAN4 = "5: br-lan    inet 192.0.2.20/24 brd 192.0.2.255 scope global br-lan"
+
+
+def test_setup_refuses_when_capture_if_is_ssh_path(probe):
+    ip_stub(probe, "3: eth1    inet 192.0.2.20/24 brd 192.0.2.255 scope global eth1")
+    refused(probe, SSH4)
+
+
+def test_setup_refuses_ssh_on_bridge_with_capture_port_uci(probe):
+    ip_stub(probe, BRLAN4)  # fixture br-lan has ports eth1, no sysfs
+    refused(probe, SSH4)
+
+
+def test_setup_refuses_ssh_on_bridge_with_capture_port_sysfs(probe):
+    ip_stub(probe, BRLAN4)
+    probe.run("uci delete network.@device[1].ports; uci commit network")
+    refused(probe, SSH4, brif=True)
+
+
+def test_setup_refuses_ssh_ipv6_on_capture_if(probe):
+    ip_stub(probe, "3: eth1    inet6 2001:db8::20/64 scope global")
+    refused(probe, {"SSH_CONNECTION": "2001:db8::5 5000 2001:db8::20 22"})
+
+
+def test_setup_refuses_default_route_on_capture_if(probe):
+    ip_stub(probe, route4="default via 192.0.2.1 dev eth1")
+    refused(probe)
+
+
+def test_setup_refuses_default_route_via_bridge_with_capture(probe):
+    ip_stub(probe, route4="default via 192.0.2.1 dev br-lan")
+    refused(probe)
+
+
+def test_setup_refuses_ipv6_default_route_on_capture_if(probe):
+    ip_stub(probe, route6="default via fe80::1 dev eth1 metric 1024")
+    refused(probe)
+
+
+def test_setup_proceeds_when_ssh_arrives_on_mgmt_if(probe):
+    ip_stub(probe, "2: eth0    inet 192.0.2.20/24 scope global eth0",
+            route4="default via 192.0.2.1 dev eth0")
+    r = run_setup(probe, env=SSH4)
+    assert r.rc == 0, r.err
 
 
 def test_setup_twice_is_idempotent(probe):
