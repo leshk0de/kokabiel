@@ -32,9 +32,8 @@ def sd(probe, args, env=None, stdin=None):
 
 def fmt(probe, args, stdin=None, node=True, env=None):
     # sfdisk would create the partition node; the tests only need it to exist
-    probe.run("touch /dev/mmcblk0p1" if node else "rm -f /dev/mmcblk0p1")
-    return probe.run(f"{FMT} {args}", env={**ENV, "KOKABIEL_SD_NODE_TEST": "-e", **(env or {})},
-                     stdin=stdin)
+    probe.run("rm -f /dev/mmcblk0p1" + ("; mknod /dev/mmcblk0p1 b 179 1" if node else ""))
+    return probe.run(f"{FMT} {args}", env={**ENV, **(env or {})}, stdin=stdin)
 
 
 def test_sd_find_ignores_emmc(probe):
@@ -276,9 +275,9 @@ def test_format_rechecks_safety_after_confirmation(probe):
     cmd = ("(sleep 1; echo '36 35 179:1 / /opt rw - ext4 /dev/mmcblk0p1 rw' "
            "> /tmp/proc/self/mountinfo) & (sleep 2; echo ERASE) | "
            f"{FMT} --device /dev/mmcblk0 --probe probe-a; r=$?; wait; exit $r")
-    probe.run("touch /dev/mmcblk0p1")
+    probe.run("rm -f /dev/mmcblk0p1; mknod /dev/mmcblk0p1 b 179 1")
     probe.fake_mmc("mmcblk0", "SD", 7733248, partitions=["mmcblk0p1"])
-    r = probe.run(cmd, env={**ENV, "KOKABIEL_SD_NODE_TEST": "-e"})
+    r = probe.run(cmd, env=ENV)
     assert r.rc == 6, r.err
     assert destructive(probe) == [] and not probe.calls("umount")
 
@@ -339,3 +338,49 @@ def test_sd_mount_keeps_fstab_when_card_already_mounted(probe):
               "uci commit fstab")
     assert sd(probe, "mount", env={"CAPTURE_DIR": "/tmp/capmnt"}).rc == 0
     assert probe.uci("fstab.kokabiel_cap.uuid") == "00000000-0000-4000-8000-0000000000c1"
+
+
+def test_guard_root_exemption_never_applies_to_overlay(probe):
+    probe.mountinfo("36 35 179:2 / /overlay rw - ext4 /dev/mmcblk0p2 rw")
+    probe.fake_mmc("mmcblk0", "SD", 7733248, partitions=["mmcblk0p2"])
+    probe.run("touch /etc/config/kokabiel; uci set kokabiel.main=kokabiel; "
+              "uci set kokabiel.main.capture_dir=/overlay; uci commit kokabiel")
+    r = sd(probe, "find", env={"CAPTURE_DIR": ""})
+    assert r.rc == 1
+
+
+def test_guard_root_exemption_never_applies_to_rom_or_root(probe):
+    for mp in ("/rom", "/"):
+        probe.mountinfo(f"36 35 179:2 / {mp} rw - ext4 /dev/mmcblk0p2 rw")
+        probe.fake_mmc("mmcblk0", "SD", 7733248, partitions=["mmcblk0p2"])
+        assert sd(probe, "find", env={"CAPTURE_DIR": mp}).rc == 1, mp
+
+
+def test_guard_mountinfo_without_root_entry_fails_closed(probe):
+    probe.fake_mmc("mmcblk0", "SD", 7733248, partitions=["mmcblk0p1"])
+    probe.write("/tmp/proc/self/mountinfo", "20 1 0:5 / /proc rw - proc proc rw\n")
+    assert sd(probe, "find").rc == 1
+
+
+def test_guard_real_world_numbering(probe):
+    # FriendlyWrt R5C: eMMC mmcblk2 at 179:0 with root on p2; SD mmcblk0 at 179:96.
+    probe.fake_mmc("mmcblk2", "MMC", 61071360, partitions=["mmcblk2p1", "mmcblk2p2"])
+    probe.run("echo 179:0 > /tmp/sys/block/mmcblk2/dev; echo 179:1 > /tmp/sys/block/mmcblk2/mmcblk2p1/dev; "
+              "echo 179:2 > /tmp/sys/block/mmcblk2/mmcblk2p2/dev")
+    probe.fake_mmc("mmcblk0", "SD", 7733248, partitions=["mmcblk0p1"])
+    probe.run("echo 179:96 > /tmp/sys/block/mmcblk0/dev; echo 179:97 > /tmp/sys/block/mmcblk0/mmcblk0p1/dev")
+    probe.mountinfo("36 35 179:2 / / rw - ext4 /dev/root rw")
+    r = sd(probe, "find")
+    assert r.rc == 0 and r.out.strip() == "/dev/mmcblk0"
+    probe.run("echo 179:96 > /tmp/sys/block/mmcblk2/dev; echo 179:97 > /tmp/sys/block/mmcblk2/mmcblk2p2/dev")
+    probe.mountinfo("36 35 179:97 / / rw - ext4 /dev/root rw")
+    assert sd(probe, "find").rc == 1
+
+
+def test_guard_loop_backing_file_on_capture_dir_partition(probe):
+    def loop():
+        probe.write("/tmp/sys/block/loop0/dev", "7:0\n")
+        probe.write("/tmp/sys/block/loop0/loop/backing_file", "/mnt/kokabiel-cap/ov.img\n")
+    r = unsafe(probe, ["30 1 7:0 / /overlay rw - f2fs /dev/loop0 rw",
+                       "36 35 179:1 / /mnt/kokabiel-cap rw - ext4 /dev/mmcblk0p1 rw"], extra=loop)
+    assert r.rc == 1

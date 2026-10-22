@@ -145,6 +145,11 @@ kk_load_config() {
 	9 | 10) ;;
 	*) kk_die "EXPORT_VERSION must be 9 or 10 (got '$EXPORT_VERSION')" ;;
 	esac
+	case $CAPTURE_DIR in
+	/ | /rom | /overlay | /rom/ | /overlay/ | //) kk_die "CAPTURE_DIR must not be $CAPTURE_DIR (system mount)" ;;
+	/*) ;;
+	*) kk_die "CAPTURE_DIR must be an absolute path (got '$CAPTURE_DIR')" ;;
+	esac
 	_kk_uint CAPTURE_RAM_MAX_MB 100 500
 	_kk_uint CAPTURE_SD_MAX_MB 1 99999999
 	case $ENABLE_LUCI in

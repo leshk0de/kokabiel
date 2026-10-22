@@ -143,3 +143,10 @@ def test_load_config_disable_services_default_and_override(probe):
     r = load(probe, "COLLECTOR_HOST=192.0.2.10\nKOKABIEL_DISABLE_SERVICES='ttyd sqm'\n",
              extra='echo "$KOKABIEL_DISABLE_SERVICES"')
     assert r.out.strip() == "ttyd sqm"
+
+
+@pytest.mark.parametrize("d", ["/", "/rom", "/overlay", "relative/dir", ""])
+def test_load_config_rejects_unsafe_capture_dir(probe, d):
+    r = load(probe, f"COLLECTOR_HOST=192.0.2.10\nCAPTURE_DIR={d}\n")
+    # an empty value falls back to the default, which is fine
+    assert r.rc == (0 if d == "" else 3), r.err

@@ -68,13 +68,17 @@ kk_sd_safe() {
 	_kk_devs=$(_kk_sd_devnums "$1") || return 1
 	_kk_cd=$(kk_sd_capdir)
 	# mountinfo: id parent maj:min root mountpoint opts [optional...] - fstype source superopts
+	# The capture-dir exemption never covers / /rom /overlay. A mountinfo without a
+	# "/" entry is not trusted (unsafe).
 	awk -v devs="$_kk_devs" -v cd="$_kk_cd" -v n="$1" '
 		{
 			for (i = 6; i <= NF && $i != "-"; i++) ;
 			src = $(i + 2)
-			if ($5 != cd && (index(devs, " " $3 " ") || src ~ ("^/dev/" n "(p[0-9]+)?$"))) bad = 1
+			sys = ($5 == "/" || $5 == "/rom" || $5 == "/overlay")
+			if ($5 == "/") hasroot = 1
+			if (($5 != cd || sys) && (index(devs, " " $3 " ") || src ~ ("^/dev/" n "(p[0-9]+)?$"))) bad = 1
 		}
-		END { exit !bad }' "$_kk_mi" && return 1
+		END { exit (bad || !hasroot) ? 0 : 1 }' "$_kk_mi" && return 1
 	_kk_sd_root_on_cmdline "$1" && return 1
 	for _kk_lf in "$(kk_sysfs block)"/loop*/loop/backing_file; do
 		[ -r "$_kk_lf" ] || continue

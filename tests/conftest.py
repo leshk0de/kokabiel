@@ -160,6 +160,9 @@ class Probe:
 
     def mountinfo(self, *lines):
         """Write /tmp/proc/self/mountinfo (the guard fails closed without it)."""
+        lines = list(lines)
+        if not any(len(ln.split()) > 4 and ln.split()[4] == "/" for ln in lines):
+            lines.insert(0, "1 0 8:1 / / rw - ext4 /dev/sda1 rw")  # a normal non-card root
         self.write("/tmp/proc/self/mountinfo", "".join(ln + "\n" for ln in lines))
 
     def reset(self):
