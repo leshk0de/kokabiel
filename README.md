@@ -117,7 +117,7 @@ kmods for 6.12, so they will not load (the scripts refuse to install them).
 
 ### What the play does to the appliance
 
-- eth1 is detached from `br-lan`, gets no address (IPv6 off), no DHCP/RA, a DROP-only firewall zone,
+- eth1 is detached from `br-lan`, gets no address (IPv6 off), no DHCP/RA, a DROP-only firewall zone (`kk_capture`),
   promiscuous mode and offloads off (GRO/GSO/TSO/LRO, rx-VLAN) re-applied on every link-up.
 - A MAC-based interface-role guard refuses to treat the wrong NIC as the capture port.
 - `softflowd` runs under procd with respawn, exporting IPFIX (v10, or v9 fallback) with full
@@ -125,7 +125,7 @@ kmods for 6.12, so they will not load (the scripts refuse to install them).
 - `dnsmasq` is restricted to loopback; the web UI (LuCI) is off. With `enable_luci: true` it binds
   to `127.0.0.1` only; reach it with `ssh -L 8080:127.0.0.1:80 root@<probe>`.
 - A long list of FriendlyWrt router services is stopped and disabled (ttyd, vsftpd, samba4,
-  minidlna, miniupnpd, adblock, smartdns, sqm, odhcpd and more; the default list is
+  minidlna, miniupnpd, adblock, smartdns, sqm, odhcpd, lldpd, umdns and more; the default list is
   `KOKABIEL_DISABLE_SERVICES` in [scripts/lib/common.sh](scripts/lib/common.sh)). Only SSH (22)
   and metrics (9100) may listen; `kokabiel-status` checks this.
 
@@ -141,7 +141,7 @@ from the role `defaults/`.
 | `export_version` | `10` | `10` = IPFIX, `9` = NetFlow v9 |
 | `probe_name` | inventory hostname | hostname; distinguishes probes in dashboards |
 | `capture_if` / `mgmt_if` | `eth1` / `eth0` | passive capture and management NICs |
-| `track_level` | `full` | softflowd tracking: `full`, `proto`, `ip`, `ether` (adds MACs) |
+| `track_level` | `full` | softflowd tracking: `full`, `port`, `proto`, `ip`, `vlan`, `ether` (adds MACs); anything else is rejected |
 | `capture_dir` | `/mnt/kokabiel-cap` | SD card mount point |
 | `capture_sd_max_mb` | `4096` | cap on SD capture storage |
 | `capture_ram_max_mb` | `100` | cap on RAM capture (allowed 100-500) |

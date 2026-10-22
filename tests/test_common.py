@@ -140,6 +140,7 @@ def test_load_config_disable_services_default_and_override(probe):
     r = load(probe, "COLLECTOR_HOST=192.0.2.10\n", extra='echo "$KOKABIEL_DISABLE_SERVICES"')
     assert r.rc == 0, r.err
     assert r.out.split()[0] == "ttyd" and "odhcpd" in r.out.split()
+    assert "lldpd" in r.out.split() and "umdns" in r.out.split()
     r = load(probe, "COLLECTOR_HOST=192.0.2.10\nKOKABIEL_DISABLE_SERVICES='ttyd sqm'\n",
              extra='echo "$KOKABIEL_DISABLE_SERVICES"')
     assert r.out.strip() == "ttyd sqm"
@@ -150,3 +151,17 @@ def test_load_config_rejects_unsafe_capture_dir(probe, d):
     r = load(probe, f"COLLECTOR_HOST=192.0.2.10\nCAPTURE_DIR={d}\n")
     # an empty value falls back to the default, which is fine
     assert r.rc == (0 if d == "" else 3), r.err
+
+
+@pytest.mark.parametrize("lvl", ["full", "port", "proto", "ip", "vlan", "ether"])
+def test_load_config_track_level_valid(probe, lvl):
+    r = load(probe, f"COLLECTOR_HOST=192.0.2.10\nTRACK_LEVEL={lvl}\n", extra='echo "$TRACK_LEVEL"')
+    assert r.rc == 0, r.err
+    assert r.out.strip() == lvl
+
+
+@pytest.mark.parametrize("lvl", ["bogus", "FULL", "full,ip"])
+def test_load_config_track_level_invalid(probe, lvl):
+    r = load(probe, f"COLLECTOR_HOST=192.0.2.10\nTRACK_LEVEL={lvl}\n")
+    assert r.rc == 3
+    assert "TRACK_LEVEL" in r.err

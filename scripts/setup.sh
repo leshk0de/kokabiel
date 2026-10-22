@@ -55,6 +55,8 @@ guard_lockout() {
 install_packages() {
 	[ "$SKIP_PACKAGES" = 1 ] && return 0
 	kk_pkg_install softflowd ethtool block-mount e2fsprogs sfdisk tcpdump prometheus-node-exporter-lua
+	# status.sh and the collector bound softflowctl with timeout(1); BusyBox may lack it.
+	command -v timeout >/dev/null 2>&1 || kk_pkg_install coreutils-timeout
 }
 
 # install_file SRC DST MODE: copy only when content differs.
@@ -211,15 +213,17 @@ configure_dhcp() {
 }
 
 configure_firewall() {
-	uci set firewall.kokabiel_capture=zone
-	uci set firewall.kokabiel_capture.name=kokabiel_capture
-	uci set firewall.kokabiel_capture.input=DROP
-	uci set firewall.kokabiel_capture.output=DROP
-	uci set firewall.kokabiel_capture.forward=DROP
-	uci_set_list firewall.kokabiel_capture.network capture
+	# Migration: the zone was called kokabiel_capture before v1 (name > 11 chars).
+	uci -q delete firewall.kokabiel_capture || true
+	uci set firewall.kk_capture=zone
+	uci set firewall.kk_capture.name=kk_capture
+	uci set firewall.kk_capture.input=DROP
+	uci set firewall.kk_capture.output=DROP
+	uci set firewall.kk_capture.forward=DROP
+	uci_set_list firewall.kk_capture.network capture
 
 	for _z in $(uci_sections firewall zone); do
-		[ "$_z" = firewall.kokabiel_capture ] && continue
+		[ "$_z" = firewall.kk_capture ] && continue
 		uci -q get "$_z.network" | tr ' ' '\n' | grep -qx capture &&
 			uci del_list "$_z.network=capture"
 	done

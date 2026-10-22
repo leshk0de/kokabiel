@@ -21,7 +21,7 @@ INIT_SERVICES = (
     "ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm "
     "nlbwmon radius avahi avahi-daemon collectd luci_statistics watchcat hd-idle fa-fancontrol "
     "uhttpd dropbear firewall network log cron sysntpd dnsmasq rpcd blockd fstab "
-    "triggerhappy packet_steering urngd odhcpd "
+    "triggerhappy packet_steering urngd odhcpd lldpd umdns "
     "softflowd kokabiel kokabiel-flows prometheus-node-exporter-lua"
 ).split()
 

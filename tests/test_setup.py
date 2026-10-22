@@ -3,7 +3,7 @@ ENV = {"KOKABIEL_LIB": "/work/scripts/lib", "KOKABIEL_INSTALL_ROOT": "/tmp/root"
 DEFAULT_DISABLE = (
     "ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm "
     "nlbwmon radius avahi-daemon collectd luci_statistics watchcat hd-idle "
-    "fa-fancontrol odhcpd"
+    "fa-fancontrol odhcpd lldpd umdns"
 ).split()
 
 
@@ -37,8 +37,8 @@ def test_setup_detaches_capture_from_lan(probe):
 
 def test_setup_capture_zone_drops(probe):
     assert run_setup(probe).rc == 0
-    z = "firewall.kokabiel_capture"
-    assert probe.uci(f"{z}.name") == "kokabiel_capture"
+    z = "firewall.kk_capture"
+    assert probe.uci(f"{z}.name") == "kk_capture"
     for opt in ("input", "output", "forward"):
         assert probe.uci(f"{z}.{opt}") == "DROP"
     assert probe.uci(f"{z}.network") == "capture"
@@ -335,3 +335,40 @@ def test_setup_prints_changed_marker_only_when_changed(probe):
     second = run_setup(probe)
     assert second.rc == 0, second.err
     assert "KOKABIEL_CHANGED" not in second.out.splitlines()
+
+
+def test_setup_migrates_old_capture_zone(probe):
+    probe.run("uci set firewall.kokabiel_capture=zone; "
+              "uci set firewall.kokabiel_capture.name=kokabiel_capture; "
+              "uci add_list firewall.kokabiel_capture.network=capture; uci commit firewall")
+    assert run_setup(probe).rc == 0
+    assert probe.uci("firewall.kokabiel_capture") == ""
+    assert probe.uci("firewall.kk_capture.name") == "kk_capture"
+    lines = probe.run("uci show firewall | grep \"\\.network=.*'capture'\"").out.splitlines()
+    assert lines == ["firewall.kk_capture.network='capture'"], lines
+
+
+APK_ALL_MISSING = 'echo "apk $*" >> /tmp/stubs.log\n[ "$1" = info ] && exit 1\nexit 0'
+
+
+def run_setup_with_packages(probe):
+    probe.write("/tmp/site.env", "COLLECTOR_HOST=192.0.2.10\n")
+    probe.fake_nic("eth0", "02:00:00:00:00:01")
+    probe.fake_nic("eth1", "02:00:00:00:00:02")
+    probe.stub("apk", APK_ALL_MISSING)
+    r = probe.run(f"{SETUP} --env /tmp/site.env", env=ENV)
+    assert r.rc == 0, r.err
+    return [c for c in probe.calls("apk") if c.startswith("apk add")]
+
+
+def test_setup_skips_coreutils_timeout_when_present(probe):
+    adds = run_setup_with_packages(probe)
+    assert adds
+    assert not [c for c in adds if "coreutils-timeout" in c.split()]
+
+
+def test_setup_installs_coreutils_timeout_when_missing(probe):
+    probe.run("rm -f /tmp/stubs/timeout")
+    assert probe.run("command -v timeout").rc != 0
+    adds = run_setup_with_packages(probe)
+    assert [c for c in adds if "coreutils-timeout" in c.split()], adds

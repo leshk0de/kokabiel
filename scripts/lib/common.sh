@@ -134,7 +134,7 @@ kk_load_config() {
 	: "${SYSLOG_PROTO:=udp}"
 	: "${METRICS_ALLOWED_SRC:=}"
 	: "${TRACK_LEVEL:=full}"
-	: "${KOKABIEL_DISABLE_SERVICES:=ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm nlbwmon radius avahi-daemon collectd luci_statistics watchcat hd-idle fa-fancontrol odhcpd}"
+	: "${KOKABIEL_DISABLE_SERVICES:=ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm nlbwmon radius avahi-daemon collectd luci_statistics watchcat hd-idle fa-fancontrol odhcpd lldpd umdns}"
 
 	case ${COLLECTOR_HOST:-} in
 	'') kk_die "COLLECTOR_HOST is required (set it in $_kk_file)" ;;
@@ -160,6 +160,10 @@ kk_load_config() {
 	case $SYSLOG_PROTO in
 	udp | tcp) ;;
 	*) kk_die "SYSLOG_PROTO must be udp or tcp (got '$SYSLOG_PROTO')" ;;
+	esac
+	case $TRACK_LEVEL in
+	full | port | proto | ip | vlan | ether) ;;
+	*) kk_die "TRACK_LEVEL must be one of full, port, proto, ip, vlan, ether (got '$TRACK_LEVEL')" ;;
 	esac
 
 	export COLLECTOR_HOST COLLECTOR_PORT EXPORT_VERSION CAPTURE_IF MGMT_IF PROBE_NAME \
