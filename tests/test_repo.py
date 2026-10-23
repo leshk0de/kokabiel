@@ -55,3 +55,45 @@ def test_bootstrap_installs_module_deps():
         for pkg in ("python3-light", "python3-codecs", "python3-decimal",
                     "python3-logging"):
             assert pkg in line, line
+
+
+# Actions that run on the controller and never use the remote interpreter.
+_CONTROLLER_ACTIONS = {"set_fact", "debug", "fail", "assert", "pause", "meta"}
+
+
+def _module(task):
+    keys = set(task) - {"name", "vars", "when", "register", "args", "loop",
+                        "loop_control", "no_log", "changed_when", "failed_when",
+                        "delegate_to", "become", "check_mode", "run_once",
+                        "tags", "until", "retries", "delay", "notify"}
+    return next(iter(keys)).rsplit(".", 1)[-1] if keys else ""
+
+
+def _remote_tasks_with_controller_python(tasks, inherited=False):
+    for t in tasks or []:
+        v = str((t.get("vars") or {}).get("ansible_python_interpreter", ""))
+        local_py = inherited or "ansible_playbook_python" in v
+        if "block" in t:
+            for part in ("block", "rescue", "always"):
+                yield from _remote_tasks_with_controller_python(t.get(part), local_py)
+        elif (local_py and t.get("delegate_to") != "localhost"
+              and _module(t) not in _CONTROLLER_ACTIONS):
+            yield t.get("name")
+
+
+def test_controller_python_only_on_localhost_tasks():
+    # The probe has no copy of the controller's Python; a remote module that
+    # inherits ansible_playbook_python fails with "module interpreter ... not
+    # found" (first live run: passwd root inside the passphrase block).
+    import yaml
+    bad = []
+    files = sorted((REPO / "ansible/roles").glob("*/tasks/*.yml"))
+    files += sorted((REPO / "ansible").glob("*.yml"))
+    for f in files:
+        doc = yaml.safe_load(f.read_text()) or []
+        plays = [p for p in doc if isinstance(p, dict) and "tasks" in p]
+        task_lists = [p["tasks"] for p in plays] if plays else [doc]
+        for tasks in task_lists:
+            bad += [f"{f.relative_to(REPO)}: {n}"
+                    for n in _remote_tasks_with_controller_python(tasks)]
+    assert not bad, bad

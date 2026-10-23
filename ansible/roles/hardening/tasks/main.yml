@@ -40,14 +40,15 @@
 # The passphrase never reaches ansible.log or the callback output: every task
 # that touches it is no_log, and the operator sees it via a direct write to
 # the controller's terminal. Controller-side modules use the playbook's own
-# Python (localhost has no /usr/bin/python3 guarantee).
+# Python (localhost has no /usr/bin/python3 guarantee), set per task: a
+# block-level setting would also reach `passwd root`, which runs on the probe.
 - name: Root passphrase
-  vars:
-    ansible_python_interpreter: "{{ ansible_playbook_python }}"
   block:
     - name: Make sure the local logs directory and files are private
       delegate_to: localhost
       become: false
+      vars:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
       ansible.builtin.file:
         path: "{{ item.path }}"
         state: "{{ item.state }}"
@@ -63,6 +64,8 @@
     - name: Read the local passphrase file, if any
       delegate_to: localhost
       become: false
+      vars:
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
       ansible.builtin.slurp:
         src: "{{ hardening_pw_file }}"
       register: hardening_pw_slurp
@@ -96,6 +99,8 @@
         - name: Generate a passphrase
           delegate_to: localhost
           become: false
+          vars:
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
           ansible.builtin.command:
             argv:
               - "{{ ansible_playbook_python }}"
@@ -113,6 +118,8 @@
         - name: Save the passphrase locally as PENDING before applying it
           delegate_to: localhost
           become: false
+          vars:
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
           ansible.builtin.lineinfile:
             path: "{{ hardening_pw_file }}"
             line: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }} PENDING {{ hardening_pw }}"
@@ -133,6 +140,8 @@
             - name: Mark the new passphrase FAILED
               delegate_to: localhost
               become: false
+              vars:
+                ansible_python_interpreter: "{{ ansible_playbook_python }}"
               ansible.builtin.replace:
                 path: "{{ hardening_pw_file }}"
                 regexp: '^(\S+) PENDING {{ hardening_pw | regex_escape }}$'
@@ -148,6 +157,8 @@
         - name: Mark the previous ACTIVE passphrase RETIRED
           delegate_to: localhost
           become: false
+          vars:
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
           ansible.builtin.replace:
             path: "{{ hardening_pw_file }}"
             regexp: '^(\S+) ACTIVE (\S+)$'
@@ -157,6 +168,8 @@
         - name: Mark the new passphrase ACTIVE
           delegate_to: localhost
           become: false
+          vars:
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
           ansible.builtin.replace:
             path: "{{ hardening_pw_file }}"
             regexp: '^(\S+) PENDING {{ hardening_pw | regex_escape }}$'
