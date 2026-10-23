@@ -43,3 +43,13 @@ def test_capture_requires_limit_first():
     assert text.index("- name: Require an explicit probe (-l)") < text.index("- name: Run the capture")
     assert text.index("- name:", first) == text.index("- name: Require an explicit probe (-l)")
     assert "ansible_limit is defined" in t and "-l <probe>" in t
+
+
+def test_bootstrap_installs_codecs_and_checks_idna():
+    # python3-light lacks encodings.idna, which ansible-core 2.19+ module_utils
+    # import on every module run ("LookupError: unknown encoding: idna").
+    t = (REPO / "ansible/roles/bootstrap_python/tasks/main.yml").read_text()
+    assert "import encodings.idna" in t, t
+    for mgr in ("apk add", "opkg install"):
+        line = next(l for l in t.splitlines() if mgr in l)
+        assert "python3-light" in line and "python3-codecs" in line, line
