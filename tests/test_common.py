@@ -15,7 +15,7 @@ def test_load_config_defaults(probe):
                    '$ENABLE_LUCI [$SYSLOG_HOST] $TRACK_LEVEL"')
     assert r.rc == 0, r.err
     assert r.out.strip() == (
-        "192.0.2.10 2055 10 eth1 eth0 100 4096 /mnt/kokabiel-cap 0 [] full"
+        "192.0.2.10 2055 10 eth1 eth0 100 4096 /mnt/kokabiel-cap 0 [] ether"
     )
 
 

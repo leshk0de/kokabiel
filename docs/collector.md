@@ -34,6 +34,27 @@ Fix it before turning the probe on:
 Related: keep the probe's management path off the mirrored link, so its own export is not captured.
 See [planning.md](planning.md).
 
+## Pipeline gotchas for probe flows
+
+Found while wiring the probe into a goflow2 → Vector → Quickwit pipeline that already ingested a
+gateway's flows:
+
+- **Empty next hop.** softflowd sends no next hop, and goflow2 emits `"next_hop": ""`. An index
+  that types `next_hop` as an IP address rejects the **whole document**. Drop empty address
+  fields before indexing.
+- **Sampling defaults.** If the pipeline assumes a sampling rate for exporters that report 0 (a
+  common workaround for gateways that never send it), scope that to the gateway. The probe also
+  reports 0, and for it that means 1:1. Otherwise its bytes and packets get multiplied.
+- **MAC addresses.** With `track_level=ether` (the default) the IPFIX templates carry
+  `sourceMacAddress` (IE 56), `postDestinationMacAddress` (IE 57), `vlanId` (58) and
+  `postVlanId` (59). goflow2 decodes them into `src_mac` and `dst_mac`. An index with a fixed or
+  lenient schema silently drops fields it does not declare, so add them to the mapping if you want
+  to keep them. Gateways that do not export MACs produce an all-zero MAC address, which is
+  worth dropping at ingest.
+- **Reverse DNS at ingest.** If you keep it, skip flows on port 53 and private addresses, and send
+  the lookups through a local caching resolver. Every lookup that leaves the collector host is
+  another flow.
+
 ## Telling sources apart
 
 If the probe shares an index with the gateway's flows, distinguish them by **exporter address**: in

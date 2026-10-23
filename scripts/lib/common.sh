@@ -133,7 +133,7 @@ kk_load_config() {
 	: "${SYSLOG_PORT:=514}"
 	: "${SYSLOG_PROTO:=udp}"
 	: "${METRICS_ALLOWED_SRC:=}"
-	: "${TRACK_LEVEL:=full}"
+	: "${TRACK_LEVEL:=ether}"
 	: "${TIMEZONE:=UTC0}"
 	: "${KOKABIEL_DISABLE_SERVICES:=ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm nlbwmon radius avahi-daemon collectd luci_statistics watchcat hd-idle fa-fancontrol odhcpd lldpd umdns}"
 
