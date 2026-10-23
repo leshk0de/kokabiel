@@ -1,16 +1,18 @@
 ---
 # OpenWrt ships no Python, so this role uses only `raw`.
 # python3-light alone is not enough: ansible-core's module_utils import
-# encodings.idna, decimal and logging on every module run. Verified on
-# OpenWrt 25.12 with every module the roles use.
+# encodings.idna, decimal and logging on every module run, and async tasks
+# (capture.yml) need multiprocessing. Verified on OpenWrt 25.12 with every
+# module the roles use.
 - name: Install the Python packages ansible modules need
   ansible.builtin.raw: |
-    if [ -x /usr/bin/python3 ] && /usr/bin/python3 -c 'import encodings.idna, decimal, logging' 2>/dev/null; then
+    pkgs="python3-light python3-codecs python3-decimal python3-logging python3-multiprocessing"
+    if [ -x /usr/bin/python3 ] && /usr/bin/python3 -c 'import encodings.idna, decimal, logging, multiprocessing' 2>/dev/null; then
       echo PYTHON_PRESENT
     elif command -v apk >/dev/null 2>&1; then
-      apk update >/dev/null && apk add python3-light python3-codecs python3-decimal python3-logging >/dev/null && echo PYTHON_INSTALLED
+      apk update >/dev/null && apk add $pkgs >/dev/null && echo PYTHON_INSTALLED
     elif command -v opkg >/dev/null 2>&1; then
-      opkg update >/dev/null && opkg install python3-light python3-codecs python3-decimal python3-logging >/dev/null && echo PYTHON_INSTALLED
+      opkg update >/dev/null && opkg install $pkgs >/dev/null && echo PYTHON_INSTALLED
     else
       echo "no supported package manager (apk or opkg)" >&2
       exit 1

@@ -47,14 +47,16 @@ def test_capture_requires_limit_first():
 
 def test_bootstrap_installs_module_deps():
     # python3-light lacks encodings.idna, decimal and logging, which
-    # ansible-core module_utils import on every module run.
+    # ansible-core module_utils import on every module run, and
+    # multiprocessing, which async tasks (capture.yml) need.
     t = (REPO / "ansible/roles/bootstrap_python/tasks/main.yml").read_text()
-    assert "import encodings.idna, decimal, logging" in t, t
-    for mgr in ("apk add", "opkg install"):
-        line = next(l for l in t.splitlines() if mgr in l)
-        for pkg in ("python3-light", "python3-codecs", "python3-decimal",
-                    "python3-logging"):
-            assert pkg in line, line
+    assert "import encodings.idna, decimal, logging, multiprocessing" in t, t
+    pkgs = next(l for l in t.splitlines() if "pkgs=" in l)
+    for pkg in ("python3-light", "python3-codecs", "python3-decimal",
+                "python3-logging", "python3-multiprocessing"):
+        assert pkg in pkgs, pkgs
+    for mgr in ("apk add $pkgs", "opkg install $pkgs"):
+        assert mgr in t, t
 
 
 # Actions that run on the controller and never use the remote interpreter.
