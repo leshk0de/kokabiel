@@ -45,11 +45,13 @@ def test_capture_requires_limit_first():
     assert "ansible_limit is defined" in t and "-l <probe>" in t
 
 
-def test_bootstrap_installs_codecs_and_checks_idna():
-    # python3-light lacks encodings.idna, which ansible-core 2.19+ module_utils
-    # import on every module run ("LookupError: unknown encoding: idna").
+def test_bootstrap_installs_module_deps():
+    # python3-light lacks encodings.idna, decimal and logging, which
+    # ansible-core module_utils import on every module run.
     t = (REPO / "ansible/roles/bootstrap_python/tasks/main.yml").read_text()
-    assert "import encodings.idna" in t, t
+    assert "import encodings.idna, decimal, logging" in t, t
     for mgr in ("apk add", "opkg install"):
         line = next(l for l in t.splitlines() if mgr in l)
-        assert "python3-light" in line and "python3-codecs" in line, line
+        for pkg in ("python3-light", "python3-codecs", "python3-decimal",
+                    "python3-logging"):
+            assert pkg in line, line
