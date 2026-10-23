@@ -13,6 +13,8 @@ enable_luci: 0
 # syslog_host: 198.51.100.30
 # metrics_allowed_src: 198.51.100.0/24
 track_level: full
+# POSIX TZ string (not an Olson name like America/Los_Angeles)
+timezone: UTC0
 # ssh_pubkey defaults to ~/.ssh/id_ed25519.pub; override here if your key lives elsewhere
 # ssh_pubkey: ~/.ssh/id_ed25519.pub
 disable_password_login: false

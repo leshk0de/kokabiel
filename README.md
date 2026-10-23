@@ -146,6 +146,7 @@ from the role `defaults/`.
 | `probe_name` | inventory hostname | hostname; distinguishes probes in dashboards |
 | `capture_if` / `mgmt_if` | `eth1` / `eth0` | passive capture and management NICs |
 | `track_level` | `full` | softflowd tracking: `full`, `port`, `proto`, `ip`, `vlan`, `ether` (adds MACs); anything else is rejected |
+| `timezone` | `UTC0` | POSIX TZ string such as `PST8PDT,M3.2.0,M11.1.0`; Olson names like `America/Los_Angeles` are rejected (FriendlyWrt has no zoneinfo) |
 | `capture_dir` | `/mnt/kokabiel-cap` | SD card mount point |
 | `capture_sd_max_mb` | `4096` | cap on SD capture storage |
 | `capture_ram_max_mb` | `100` | cap on RAM capture (allowed 100-500) |

@@ -37,7 +37,7 @@ _kk_uint() {
 	fi
 }
 
-_KK_VARS="COLLECTOR_HOST COLLECTOR_PORT EXPORT_VERSION CAPTURE_IF MGMT_IF PROBE_NAME CAPTURE_DIR CAPTURE_SD_MAX_MB CAPTURE_RAM_MAX_MB ENABLE_LUCI SYSLOG_HOST SYSLOG_PORT SYSLOG_PROTO METRICS_ALLOWED_SRC TRACK_LEVEL KOKABIEL_DISABLE_SERVICES"
+_KK_VARS="COLLECTOR_HOST COLLECTOR_PORT EXPORT_VERSION CAPTURE_IF MGMT_IF PROBE_NAME CAPTURE_DIR CAPTURE_SD_MAX_MB CAPTURE_RAM_MAX_MB ENABLE_LUCI SYSLOG_HOST SYSLOG_PORT SYSLOG_PROTO METRICS_ALLOWED_SRC TRACK_LEVEL TIMEZONE KOKABIEL_DISABLE_SERVICES"
 
 # _kk_parse_env FILE: safe KEY=VALUE parser (no eval of file content). Accepts
 # blank lines, # comments, CRLF, and one layer of matching quotes; a trailing
@@ -134,6 +134,7 @@ kk_load_config() {
 	: "${SYSLOG_PROTO:=udp}"
 	: "${METRICS_ALLOWED_SRC:=}"
 	: "${TRACK_LEVEL:=full}"
+	: "${TIMEZONE:=UTC0}"
 	: "${KOKABIEL_DISABLE_SERVICES:=ttyd vsftpd samba4 wsdd2 minidlna aria2 miniupnpd adblock smartdns ddns sqm nlbwmon radius avahi-daemon collectd luci_statistics watchcat hd-idle fa-fancontrol odhcpd lldpd umdns}"
 
 	case ${COLLECTOR_HOST:-} in
@@ -165,9 +166,17 @@ kk_load_config() {
 	full | port | proto | ip | vlan | ether) ;;
 	*) kk_die "TRACK_LEVEL must be one of full, port, proto, ip, vlan, ether (got '$TRACK_LEVEL')" ;;
 	esac
+	# A POSIX TZ string (what OpenWrt applies), not an Olson name: those need
+	# zoneinfo packages, without which OpenWrt silently ignores them.
+	case $TIMEZONE in
+	*[!A-Za-z0-9\<\>+,./:-]* | [0-9+-]*) _kk_tz_bad=1 ;;
+	*) case ${TIMEZONE%%,*} in */*) _kk_tz_bad=1 ;; *) _kk_tz_bad= ;; esac ;;
+	esac
+	case $TIMEZONE in *[0-9]*) ;; *) _kk_tz_bad=1 ;; esac
+	[ -z "$_kk_tz_bad" ] || kk_die "TIMEZONE must be a POSIX TZ string such as UTC0 or PST8PDT,M3.2.0,M11.1.0 (got '$TIMEZONE')"
 
 	export COLLECTOR_HOST COLLECTOR_PORT EXPORT_VERSION CAPTURE_IF MGMT_IF PROBE_NAME \
-		CAPTURE_DIR CAPTURE_SD_MAX_MB CAPTURE_RAM_MAX_MB ENABLE_LUCI SYSLOG_HOST \
+		CAPTURE_DIR CAPTURE_SD_MAX_MB CAPTURE_RAM_MAX_MB ENABLE_LUCI SYSLOG_HOST TIMEZONE \
 		SYSLOG_PORT SYSLOG_PROTO METRICS_ALLOWED_SRC TRACK_LEVEL KOKABIEL_DISABLE_SERVICES
 }
 

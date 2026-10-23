@@ -13,5 +13,6 @@ enable_luci: 0
 syslog_host: ""
 metrics_allowed_src: ""
 track_level: full
+timezone: UTC0
 probe_shim_src: "{{ playbook_dir }}/../build/pcap_immediate.so"
 probe_scripts_src: "{{ playbook_dir }}/../scripts/"

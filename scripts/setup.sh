@@ -319,6 +319,13 @@ configure_dropbear() {
 # shellcheck disable=SC2153 # SYSLOG_* come from kk_load_config
 configure_system() {
 	[ -z "$PROBE_NAME" ] || uci set "system.@system[0].hostname=$PROBE_NAME"
+	uci set "system.@system[0].timezone=$TIMEZONE"
+	# zonename is only meaningful with zoneinfo; keep it truthful for LuCI.
+	if [ "$TIMEZONE" = UTC0 ]; then
+		uci set "system.@system[0].zonename=UTC"
+	else
+		uci -q delete "system.@system[0].zonename" || true
+	fi
 	if [ -n "$SYSLOG_HOST" ]; then
 		uci set "system.@system[0].log_ip=$SYSLOG_HOST"
 		uci set "system.@system[0].log_port=$SYSLOG_PORT"
@@ -351,6 +358,8 @@ apply() {
 	# Marker for orchestration (Ansible keys changed_when on this line).
 	[ "$KK_CHANGED" = 1 ] && echo KOKABIEL_CHANGED
 	uci commit
+	# Applies hostname and timezone (/etc/TZ) without a reboot.
+	kk_svc system reload
 	kk_svc network reload
 	kk_svc firewall restart
 	kk_svc dropbear restart

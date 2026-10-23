@@ -403,3 +403,21 @@ def test_setup_refuses_unreadable_pci_path(probe):
     assert r.rc == 3
     assert "eth1" in r.err and "PCI" in r.err
     assert snapshot(probe) == before
+
+
+def test_setup_sets_utc_by_default(probe):
+    # FriendlyWrt ships Asia/Shanghai (CST-8); probe logs should line up with
+    # the collector and Prometheus.
+    probe.run("uci set system.@system[0].timezone=CST-8; "
+              "uci set system.@system[0].zonename=Asia/Shanghai; uci commit system")
+    assert run_setup(probe).rc == 0
+    assert probe.uci("system.@system[0].timezone") == "UTC0"
+    assert probe.uci("system.@system[0].zonename") == "UTC"
+
+
+def test_setup_sets_custom_timezone(probe):
+    r = run_setup(probe, site="COLLECTOR_HOST=192.0.2.10\nTIMEZONE='PST8PDT,M3.2.0,M11.1.0'\n")
+    assert r.rc == 0, r.err
+    assert probe.uci("system.@system[0].timezone") == "PST8PDT,M3.2.0,M11.1.0"
+    # A POSIX string has no zoneinfo name; a stale one would mislead LuCI.
+    assert probe.uci("system.@system[0].zonename") == ""

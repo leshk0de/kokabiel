@@ -17,7 +17,7 @@
   loop: >-
     {{ [collector_host, collector_port, export_version, capture_if, mgmt_if,
     probe_name, capture_dir, capture_sd_max_mb, capture_ram_max_mb, enable_luci,
-    track_level, syslog_host, metrics_allowed_src] }}
+    track_level, timezone, syslog_host, metrics_allowed_src] }}
 
 - name: Fail early if the immediate-mode shim was not built on the controller
   ansible.builtin.fail:

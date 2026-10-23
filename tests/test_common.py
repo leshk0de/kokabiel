@@ -165,3 +165,23 @@ def test_load_config_track_level_invalid(probe, lvl):
     r = load(probe, f"COLLECTOR_HOST=192.0.2.10\nTRACK_LEVEL={lvl}\n")
     assert r.rc == 3
     assert "TRACK_LEVEL" in r.err
+
+
+def test_load_config_timezone_defaults_to_utc(probe):
+    r = load(probe, "COLLECTOR_HOST=192.0.2.10\n", extra='echo "$TIMEZONE"')
+    assert r.rc == 0, r.err
+    assert r.out.strip() == "UTC0"
+
+
+@pytest.mark.parametrize("tz", ["UTC0", "EST5EDT", "PST8PDT,M3.2.0,M11.1.0", "<+08>-8", "CET-1CEST,M3.5.0,M10.5.0/3"])
+def test_load_config_timezone_valid(probe, tz):
+    r = load(probe, f"COLLECTOR_HOST=192.0.2.10\nTIMEZONE='{tz}'\n", extra='echo "$TIMEZONE"')
+    assert r.rc == 0, r.err
+    assert r.out.strip() == tz
+
+
+@pytest.mark.parametrize("tz", ["Asia/Shanghai", "UTC0;reboot", "UTC 0", "$(id)"])
+def test_load_config_timezone_invalid(probe, tz):
+    r = load(probe, f"COLLECTOR_HOST=192.0.2.10\nTIMEZONE='{tz}'\n")
+    assert r.rc == 3
+    assert "TIMEZONE" in r.err
