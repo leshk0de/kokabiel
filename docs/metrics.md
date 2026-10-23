@@ -140,10 +140,12 @@ spec:
           labels: { severity: warning }
           annotations:
             summary: "Probe {{ $labels.probe }} exports no flows although the link is up"
+        # rx_dropped is deliberately not here: on a capture port the kernel
+        # counts frames it discards after the capture tap (IPv6 with IPv6
+        # off on the capture NIC, LLDP, ...), so it rises on a healthy probe.
         - alert: KokabielDropsRising
           expr: |
             rate(kokabiel_softflowd_pcap_dropped_total[10m]) > 0
-            or rate(kokabiel_capture_rx_dropped_total[10m]) > 0
             or rate(kokabiel_capture_rx_missed_errors_total[10m]) > 0
           for: 10m
           labels: { severity: warning }
@@ -191,7 +193,7 @@ Counters reset when the exporter or interface restarts, so use `rate()` or `incr
 | `kokabiel_capture_carrier_changes_total` | counter | | Carrier up/down transitions (link flaps). |
 | `kokabiel_capture_rx_packets_total` | counter | | Packets received on the capture interface. |
 | `kokabiel_capture_rx_bytes_total` | counter | | Bytes received on the capture interface. |
-| `kokabiel_capture_rx_dropped_total` | counter | | Packets dropped by the NIC driver or kernel. |
+| `kokabiel_capture_rx_dropped_total` | counter | | Frames the kernel discarded after the capture tap (for example IPv6 or LLDP on the capture NIC). It rises on a healthy probe and is not capture loss; see `rx_missed_errors` and `pcap_dropped` for that. |
 | `kokabiel_capture_rx_missed_errors_total` | counter | | Packets missed by the NIC (ring buffer overrun). |
 | `kokabiel_interface_guard_ok` | gauge | | 1 if the capture and management interfaces sit on the PCI device paths recorded at setup (`capture_dev_path`, `mgmt_dev_path`); 0 on mismatch, or when unrecorded or unreadable (fails closed). MACs are not compared: FriendlyWrt pins them per interface name. |
 | `kokabiel_softflowd_up` | gauge | | 1 if `softflowctl statistics` answered. The other softflowd metrics are absent when 0. |

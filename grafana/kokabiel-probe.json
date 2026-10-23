@@ -282,7 +282,7 @@
       "id": 5,
       "type": "stat",
       "title": "NIC guard OK",
-      "description": "0 means the capture or management interface MAC differs from the recorded one (fails closed).",
+      "description": "0 means the capture or management NIC is not on its recorded PCI device (swapped or renamed); softflowd is held stopped (fails closed).",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
@@ -760,7 +760,7 @@
       "id": 15,
       "type": "timeseries",
       "title": "NIC drops/s",
-      "description": "",
+      "description": "missed = NIC overruns (real capture loss). dropped = frames the kernel discards after the capture tap (IPv6, LLDP, ...): it rises on a healthy probe and is not capture loss.",
       "datasource": {
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
