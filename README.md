@@ -286,5 +286,4 @@ MIT, see [LICENSE](LICENSE). The root passphrase generator vendors the EFF large
 3.0 US); attribution is in [NOTICE](NOTICE).
 
 Further reading: [planning](docs/planning.md), [UniFi mirror](docs/unifi-mirror.md),
-[collector](docs/collector.md), [metrics](docs/metrics.md), [bootstrap](docs/bootstrap.md),
-[design spec](docs/superpowers/specs/2026-10-22-kokabiel-probe-design.md).
+[collector](docs/collector.md), [metrics](docs/metrics.md), [bootstrap](docs/bootstrap.md).
