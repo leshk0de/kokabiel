@@ -9,23 +9,7 @@ section covers other gear. For the mechanics of the mirror itself, see
 
 A generic reference topology (yours will differ):
 
-```
-                 Internet
-                    |
-               +----+----+   sampled IPFIX (min 1:2) ------------+
-               | Gateway |                                       |
-               +----+----+                                       |
-                    | (A) gateway uplink                         |
-          +---------+----------+        mirror session           |
-          |    Core switch     |--(dest)--> probe capture port   |
-          +--+----------+------+            probe mgmt --IPFIX---+
-   (B) AP    |          | (C) inter-switch                       v
-   uplink(s) |          |     uplink                      Flow collector
-        +----+--+   +---+----------+
-        |  APs  |   | Server switch|-- servers
-        +---+---+   +--------------+
-        Wi-Fi clients (some SSIDs isolated)
-```
+![Reference topology: gateway, core switch with AP, server-switch and gateway uplinks (A, B, C), the probe on the mirror destination port, and IPFIX to a flow collector](diagrams/planning.svg)
 
 | Vantage point | Sees | Blind to |
 |---|---|---|

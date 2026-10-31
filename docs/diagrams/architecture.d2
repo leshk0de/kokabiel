@@ -1,0 +1,38 @@
+# Rendered to architecture.svg by `make diagrams`; edit this file, not the SVG.
+direction: down
+
+internet: Internet {shape: cloud}
+gateway: Gateway
+core: Core switch
+aps: APs
+clients: Wi-Fi clients
+server_switch: Server switch
+servers: Servers
+
+kokabiel: Kokabiel {
+  label.near: bottom-center
+  eth1: "eth1: capture\nno IP, promiscuous"
+  softflowd: softflowd
+  eth0: "eth0: management"
+  eth1 -> softflowd -> eth0
+}
+
+pipeline: Your collector stack {
+  label.near: bottom-center
+  direction: right
+  collector: Collector
+  index: Index
+  soc: SOC dashboard
+  collector -> index -> soc
+}
+
+internet -- gateway
+gateway -- core: (A) gateway uplink
+core -- aps: (B) AP uplink(s)
+aps -- clients
+core -- server_switch: (C) inter-switch uplink
+server_switch -- servers
+
+core -> kokabiel.eth1: mirror session (dest port) {style.stroke-dash: 4}
+kokabiel.eth0 -> pipeline.collector: IPFIX, unsampled {style.stroke-width: 3}
+gateway -> pipeline.collector: IPFIX, sampled ≥1:2 {style.stroke-dash: 4}

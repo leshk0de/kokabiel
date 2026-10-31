@@ -1,0 +1,23 @@
+# Rendered to planning.svg by `make diagrams`; edit this file, not the SVG.
+direction: down
+
+internet: Internet {shape: cloud}
+gateway: Gateway
+core: Core switch
+aps: APs
+clients: "Wi-Fi clients\n(some SSIDs isolated)"
+server_switch: Server switch
+servers: Servers
+probe: Probe
+collector: Flow collector
+
+internet -- gateway
+gateway -- core: (A) gateway uplink
+core -- aps: (B) AP uplink(s)
+aps -- clients
+core -- server_switch: (C) inter-switch uplink
+server_switch -- servers
+
+core -> probe: "mirror session\n(dest port to probe capture port)" {style.stroke-dash: 4}
+probe -> collector: IPFIX from mgmt port {style.stroke-width: 3}
+gateway -> collector: IPFIX, sampled min 1:2 {style.stroke-dash: 4}
