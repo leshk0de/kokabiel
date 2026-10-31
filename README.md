@@ -22,23 +22,7 @@ probe on your network.
 
 ## Architecture
 
-```
-                 Internet
-                    |
-               +----+----+   sampled IPFIX (>=1:2) -------------+
-               | Gateway |                                       |
-               +----+----+                                       |
-                    | (A) gateway uplink                         |
-          +---------+----------+        mirror session           |
-          |    Core switch     |--(dest)--> Kokabiel eth1        |
-          +--+----------+------+            Kokabiel eth0 --IPFIX-----+
-   (B) AP    |          | (C) inter-switch                       v
-   uplink(s) |          |     uplink                     Collector -> index -> SOC dashboard
-        +----+--+   +---+----------+
-        |  APs  |   | Server switch|-- servers
-        +---+---+   +--------------+
-         Wi-Fi clients
-```
+![Architecture: a core switch mirrors an AP uplink to Kokabiel's capture port; Kokabiel exports unsampled IPFIX to your collector alongside the gateway's sampled IPFIX](docs/diagrams/architecture.svg)
 
 | Vantage point | Sees | Blind to |
 |---|---|---|
