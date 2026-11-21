@@ -143,14 +143,22 @@ spec:
         # rx_dropped is deliberately not here: on a capture port the kernel
         # counts frames it discards after the capture tap (IPv6 with IPv6
         # off on the capture NIC, LLDP, ...), so it rises on a healthy probe.
+        # Drop ratio vs capture-NIC rx packets, > 0.1% over 15m, held 30m.
+        # libpcap drops arrive as single-scrape bursts during rx spikes; on one
+        # probe 2026-10-23..11-20 the ratio stayed above 0.1% for at most 23.5m,
+        # so `for: 30m` passes bursts and catches loss lasting ~30m+. The
+        # earlier `rate(...[10m]) > 0`, `for: 10m` fired 12x in that window,
+        # all transient.
         - alert: KokabielDropsRising
           expr: |
-            rate(kokabiel_softflowd_pcap_dropped_total[10m]) > 0
-            or rate(kokabiel_capture_rx_missed_errors_total[10m]) > 0
-          for: 10m
+            increase(kokabiel_softflowd_pcap_dropped_total[15m])
+              / increase(kokabiel_capture_rx_packets_total[15m]) > 0.001
+            or increase(kokabiel_capture_rx_missed_errors_total[15m])
+              / increase(kokabiel_capture_rx_packets_total[15m]) > 0.001
+          for: 30m
           labels: { severity: warning }
           annotations:
-            summary: "Probe {{ $labels.probe }} is dropping packets (libpcap or NIC)"
+            summary: "Probe {{ $labels.probe }} has dropped over 0.1% of captured packets for 30m (libpcap or NIC)"
         - alert: KokabielCaptureLinkDown
           expr: kokabiel_capture_link_up == 0
           for: 2m
